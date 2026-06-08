@@ -80,10 +80,11 @@ video / audio / URL
 - [`docs/context.md`](docs/context.md): project goal, stack, style, and constraints
 - [`docs/architecture.md`](docs/architecture.md): concrete module layout, data flow, dependency boundaries, and pseudocode
 - [`docs/api.md`](docs/api.md): CLI commands, artifact contract, JSON shapes, and agent interaction model
+- [`docs/workflow.md`](docs/workflow.md): capability levels and verifiable checklists for implemented workflow slices
 - [`docs/graph.md`](docs/graph.md): function-level module graph, pseudocode, and dependency direction rules
 
 ## Current status
 
-Early design/bootstrap stage.
+The project has a working Level 0 workflow: local `.srt` / `.vtt` transcript files can be converted into context-pack artifacts with `vctx prepare`.
 
-The repository currently defines the project direction and architectural constraints before implementation begins.
+See [`docs/workflow.md`](docs/workflow.md) for the capability ladder and verification checklist. URL metadata, URL subtitle acquisition, ASR fallback, and optional internal AI routing are planned but should be implemented and verified as separate levels.

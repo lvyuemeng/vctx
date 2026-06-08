@@ -28,7 +28,7 @@ The output should be easy for a human to inspect and easy for an AI agent to inj
 Out of scope by default:
 
 - embedded AI chat
-- Q&A over videos
+- Q&A over videos as a user interface
 - personal knowledge management
 - cross-video concept stores
 - RAG indexes
@@ -36,10 +36,12 @@ Out of scope by default:
 - web application backend
 - task-history database
 - provider-heavy configuration UI
-- automatic cloud LLM calls
+- implicit or unconfigured cloud AI calls
 - opinionated GitHub / Obsidian / Notion syncing
 
 Optional features may exist only when they preserve the CLI's role as a context-preparation utility.
+
+Internal AI use is allowed when it is a bounded transformation step, for example ASR, OCR, VLM frame description, language detection, noisy transcript cleanup, chapter-boundary suggestion, or provider routing. The boundary is not "no AI". The boundary is "no AI user-interface/assistant layer inside `vctx`." External agents should handle user conversation, final summarization, Q&A, memory, and knowledge workflows.
 
 ## Intended users
 
@@ -212,7 +214,7 @@ Do not add dependencies for:
 - vector databases
 - web servers
 - desktop UI
-- cloud LLM providers
+- cloud LLM providers as required/default dependencies
 - knowledge management
 - provider-specific token counting by default
 
