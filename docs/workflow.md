@@ -228,10 +228,10 @@ Preferred future behavior is partial output:
 The error/warning should tell the caller what to do next:
 
 ```text
-Try --asr local, --asr online:PROVIDER, or --transcript FILE.
+Provide a transcript file, install the default ASR extra, configure an online fallback, or accept a metadata-only partial output.
 ```
 
-## Level 3 — explicit ASR fallback
+## Level 3 — auto-adapted ASR fallback
 
 Purpose:
 
@@ -246,14 +246,16 @@ video URL or media file without subtitles
 ### Command
 
 ```bash
-uv run vctx prepare "https://..." --out ./out/video --asr local
+uv run vctx prepare "https://..." --out ./out/video
 ```
 
 or:
 
 ```bash
-uv run vctx prepare ./lecture.mp4 --out ./out/lecture --asr local
+uv run vctx prepare ./lecture.mp4 --out ./out/lecture
 ```
+
+The command stays simple. `vctx` routes to the curated default fallback when subtitles are missing.
 
 ### AI boundary
 
@@ -265,22 +267,22 @@ audio -> timestamped transcript segments
 
 It must not become a chat interface.
 
-It must be explicit in the command and manifest.
+It must be explicit in the manifest.
 
 ### Required manifest properties
 
 The manifest must say:
 
 ```text
-asr.enabled = true
-asr.provider = local/faster-whisper or online/provider-name
-asr.model = ...
-asr.cost_mode = local/free/configured/unknown
+route.selected = local | free-online | configured-online | unavailable
+route.provider = faster-whisper or curated/default provider id
+route.model = ...
+route.cost_mode = local/free/configured/unknown
 ```
 
 ### Required behavior
 
-- Do not run cloud ASR unless explicitly requested/configured.
+- Do not run paid/configured cloud ASR unless configured by project/user policy.
 - Do not hide long or costly work.
 - Keep ASR provider types behind an adapter.
 - Convert ASR result into the same `Transcript` model used by subtitles.
@@ -300,8 +302,8 @@ This level is optional. It should not block transcript-centric workflows.
 ### Command examples
 
 ```bash
-uv run vctx prepare "https://..." --out ./out/video --frames interval:30
-uv run vctx prepare "https://..." --out ./out/video --ocr local
+uv run vctx prepare "https://..." --out ./out/video --visual-context
+uv run vctx prepare "https://..." --out ./out/video --no-visual-context
 ```
 
 ### Required behavior

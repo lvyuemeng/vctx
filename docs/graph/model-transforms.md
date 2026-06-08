@@ -34,9 +34,26 @@ personal study assistant
 
 External agents read `context.md`, `chunks.json`, `manifest.json`, and other artifacts to perform those user-facing reasoning tasks.
 
+## Module role
+
+This file is the `transforms` module graph plus concrete model stack.
+
+```text
+app
+  -> transforms
+      -> local model adapters
+      -> free zero-config online adapters
+      -> configured-online adapters
+      -> models / cache / manifest evidence
+```
+
+`transforms` is atomic: it turns prepared source inputs into normalized source-grounded records plus evidence. It does not render, write final artifacts, or talk to users.
+
 ## Selection policy
 
-For each capability, use this order:
+For each capability, choose one curated default route. Avoid exposing provider/model menus.
+
+Default route order:
 
 ```text
 1. Deterministic source data
@@ -44,34 +61,34 @@ For each capability, use this order:
    - automatic platform subtitles
    - user-provided transcript
 
-2. Free / zero-config / high-quality enough route
-   - local model when local is efficient and quality is good enough
-   - free zero-config online route when it is higher quality and safe enough
+2. Best practical zero-config route
+   - local when efficient and quality is good enough
+   - free zero-config online when quality is better and the service is stable/safe enough
 
-3. Explicit configured-online route
-   - used when local/free-zero-config quality is not enough
+3. Default configured-online route
+   - used when zero-config quality is not enough and project/user config exists
    - may require credentials
    - may upload media/text
    - must be manifest-recorded
 
 4. External-command route
    - developer escape hatch only
-   - not the primary UX
+   - not primary UX
 ```
 
-Important correction: locality is not always the primary goal. For high-information-throughput visual tasks, a weak local model can be worse than a free or configured online model. The preferred route is the best practical zero-config route; local wins only when it is good enough.
+Important correction: locality is not the main goal. For high-information-throughput visual tasks, a weak local model can be worse than a free or configured online model. The preferred route is the best practical default route with the least user configuration.
 
 ## Capability stack summary
 
-| Capability | Default mode | Curated local route | Free zero-config online route | Configured-online route | Why |
+| Capability | Default behavior | Curated local route | Free zero-config online route | Configured-online route | Why |
 | --- | --- | --- | --- | --- | --- |
 | URL metadata/subtitles | always deterministic first | `yt-dlp` Python package | none needed | none | No model needed if subtitles exist. |
-| ASR | `off` by default, `auto/local/online` when requested | `faster-whisper` via optional `asr` extra | allowed only if a stable no-auth/no-cost endpoint exists | curated audio transcription API adapter | Solves no-transcript case. Local is often good enough, but not always fastest. |
-| OCR | `off` by default, `auto/local/online` when requested | `rapidocr-onnxruntime` via optional `ocr` extra | allowed if stable and higher-quality than local | curated vision/OCR API adapter | Slide/code text can be important; local OCR is often acceptable. |
-| Frame description | `off` by default, `auto/online` preferred for quality | no default local VLM yet | preferred if a stable no-auth/no-cost VLM is available | curated lightweight VLM API adapter | Visual understanding is high-throughput; local small VLMs may be too weak. |
-| Transcript cleanup | deterministic cleanup by default; model cleanup off | no default local LLM yet | acceptable for punctuation/format cleanup if stable | curated text model adapter | Cleanup must not silently rewrite meaning. |
-| Chapter suggestion | deterministic/time-based by default; model chapters off | no default local LLM yet | acceptable for rough candidates if stable | curated text model adapter | Produces candidates, not a summary. |
-| Language detection | deterministic/lightweight local | small local heuristic/library | rarely needed | rarely needed | Should not become a general LLM call. |
+| ASR | auto-adapt when transcript is missing and transcription is allowed by default policy | `faster-whisper` via optional `asr` extra | use if stable/no-auth/no-cost and better for the input | curated audio transcription API adapter | Solves no-transcript case. Local is often good enough, but not always fastest/best. |
+| OCR | auto-adapt when visual text is likely useful | `rapidocr-onnxruntime` via optional `ocr` extra | use if stable and higher-quality than local | curated vision/OCR API adapter | Slide/code text can be important; local OCR is often acceptable. |
+| Frame description | auto-adapt toward best visual route; online often wins | no default local VLM yet | preferred if stable/no-auth/no-cost and useful | curated lightweight VLM API adapter | Visual understanding is high-throughput; local small VLMs may be too weak. |
+| Transcript cleanup | deterministic cleanup by default; model cleanup only when useful/safe | no default local LLM yet | acceptable for punctuation/format cleanup if stable | curated text model adapter | Cleanup must not silently rewrite meaning. |
+| Chapter suggestion | deterministic/time-based candidates first; model route when useful | no default local LLM yet | acceptable for rough candidates if stable | curated text model adapter | Produces candidates, not a summary. |
+| Language detection | lightweight local/default heuristic | small local heuristic/library | rarely needed | rarely needed | Should not become a general LLM call. |
 
 ## Default runtime dependencies
 
@@ -119,9 +136,13 @@ av or ffmpeg integration for audio handling when needed
 Route:
 
 ```text
---asr local
+prepare INPUT
+  -> if subtitles are missing and transcript fallback is allowed
   -> download/extract audio if needed
-  -> run faster-whisper curated model
+  -> run default ASR route:
+       1. faster-whisper when installed and suitable
+       2. free zero-config online ASR when stable/better and allowed by policy
+       3. configured-online ASR when configured
   -> produce transcript.raw.json
   -> normalize/chunk/render
 ```
@@ -149,13 +170,7 @@ Caveat:
 Local ASR may be slow or lower quality for noisy audio, multilingual speech, or poor hardware.
 ```
 
-If local ASR is not good enough, use:
-
-```text
---asr online
-```
-
-not a menu of ASR providers.
+If local ASR is not good enough, the default route should adapt to the configured/free online route rather than exposing a menu of ASR providers.
 
 ### `ocr` extra
 
@@ -176,9 +191,13 @@ opencv-python-headless, only if frame/image processing needs it
 Route:
 
 ```text
---visual-context local
+prepare INPUT
+  -> if visual context is enabled or auto-detected as useful
   -> sample frames
-  -> OCR frames
+  -> run default visual-text route:
+       1. local OCR when suitable
+       2. free zero-config OCR/VLM when better and allowed by policy
+       3. configured-online vision/OCR when configured
   -> visual_records.json
   -> include visual text in readable/context artifacts
 ```
@@ -198,11 +217,7 @@ Caveat:
 OCR quality may be poor on tiny text, stylized slides, fast motion, handwriting, dense UI screenshots, and multilingual content.
 ```
 
-If local OCR quality is not good enough, use:
-
-```text
---visual-context online
-```
+If local OCR quality is not good enough, the default visual route should adapt to a better free/configured online route when policy allows it.
 
 ### `online-ai` extra
 
@@ -220,14 +235,7 @@ httpx
 
 Avoid provider SDKs as default. Add a provider-specific SDK only if plain HTTP is insufficient.
 
-Configured-online routes are used for:
-
-```text
---asr online
---visual-context online
---cleanup online
---chapters online
-```
+Configured-online routes are selected by default routing when the project/user configuration exists and the zero-config route is not good enough for the capability.
 
 Rules:
 
@@ -248,37 +256,27 @@ A free zero-config online route is preferred over local when:
 - it is stable enough for CLI use
 - it has acceptable rate limits
 - it gives materially better quality than the local route
-- the user/caller allows network/upload behavior
+- network/upload behavior is acceptable for the default policy
 - the manifest records that online processing occurred
 ```
 
-Because free public endpoints can disappear, throttle, or change behavior, they must be treated as discoverable curated routes, not hard assumptions.
-
-Suggested API policy:
-
-```text
---allow-free-online
-```
-
-allows `auto` routes to use curated free online services.
-
-Without it, `auto` should stay deterministic/local.
+Because free public endpoints can disappear, throttle, or change behavior, they must be treated as discoverable curated routes, not hard assumptions. `--offline` or equivalent config should disable them.
 
 ## Capability API graph
 
 ### ASR graph
 
 ```text
-prepare INPUT --asr MODE
+prepare INPUT
   -> acquire metadata
   -> try subtitles
        -> if subtitles found: skip ASR
        -> if subtitles missing: continue
-  -> route_asr(MODE)
-       -> off: fail or partial manifest
-       -> auto: local ASR if installed/good enough; free-online if allowed; else partial/fail
-       -> local: curated faster-whisper route
-       -> online: curated configured-online ASR route
+  -> route_default_asr(policy, environment, media)
+       -> deterministic unavailable
+       -> best zero-config route: local faster-whisper or free-online if better/available
+       -> configured-online route when configured and needed
+       -> unavailable: partial/fail with clear manifest
   -> transcript.raw.json
   -> transcript.clean.json
   -> chunks.json
@@ -289,16 +287,16 @@ prepare INPUT --asr MODE
 ### Visual context graph
 
 ```text
-prepare INPUT --visual-context MODE
+prepare INPUT
   -> acquire media/frame capability
   -> sample frames using deterministic policy
        -> time interval
        -> scene/keyframe later if needed
-  -> route_visual(MODE)
-       -> off: skip
-       -> auto: local OCR first; free-online VLM/OCR if allowed and local is insufficient
-       -> local: curated OCR route
-       -> online: curated configured-online VLM/OCR route
+  -> route_default_visual(policy, environment, frames)
+       -> skip when visual context is not useful or not supported
+       -> local OCR for visual text when good enough
+       -> free-online OCR/VLM when better/available
+       -> configured-online vision route when configured and needed
   -> visual_records.json
   -> optional visual sections in readable.md/context.md
   -> manifest step: transform.visual_context
@@ -314,14 +312,13 @@ Do not over-prioritize local if the local model is too weak or too slow.
 ### Cleanup graph
 
 ```text
-prepare INPUT --cleanup MODE
+prepare INPUT
   -> parse transcript
   -> deterministic cleanup
-  -> route_cleanup(MODE)
-       -> off: deterministic cleanup only
-       -> auto: local/free-online if enabled and safe
-       -> local: curated local cleanup route if available
-       -> online: curated configured-online text route
+  -> route_default_cleanup(policy, transcript)
+       -> deterministic cleanup only when model cleanup is not useful/safe
+       -> free zero-config cleanup when stable and safe
+       -> configured-online cleanup when configured and needed
   -> transcript.clean.json
   -> manifest step: transform.cleanup
 ```
@@ -338,14 +335,13 @@ record model-mediated cleanup
 ### Chapter graph
 
 ```text
-prepare INPUT --chapters MODE
+prepare INPUT
   -> chunks/transcript
   -> deterministic boundary candidates
-  -> route_chapters(MODE)
-       -> off: skip or deterministic only
-       -> auto: local/free-online if enabled and useful
-       -> local: curated local route if available
-       -> online: curated configured-online text route
+  -> route_default_chapters(policy, chunks)
+       -> deterministic candidates when good enough
+       -> free zero-config model candidates when useful/stable
+       -> configured-online candidates when configured and needed
   -> chapter_candidates.json
   -> manifest step: transform.chapters
 ```

@@ -4,7 +4,7 @@
 
 This document describes the architecture of `vctx` at the abstraction level.
 
-It intentionally avoids concrete module names, function signatures, and implementation pseudocode. Those belong in [`docs/graph.md`](graph.md). This document answers a different question:
+It intentionally avoids concrete module names, function signatures, and implementation pseudocode. Those belong in the separated module graphs under [`docs/graph/`](graph/). This document answers a different question:
 
 > What abstract behaviors must the system have, and how should those behaviors cooperate without becoming a monolith?
 
@@ -133,7 +133,7 @@ These transformations must be:
 
 `vctx` may call local models or online APIs behind transformation adapters. The user interface remains CLI commands and artifact files, not chat. Avoid exposing raw external-command wiring as the normal UX; prefer one curated default route per capability.
 
-Technology and concrete model choices are not decided in this abstract architecture document. See [`docs/model-stack.md`](model-stack.md) for the concrete model-transformation stack and capability API graph.
+Technology and concrete model choices are not decided in this abstract architecture document. See [`docs/graph/model-transforms.md`](graph/model-transforms.md) for the concrete model-transformation stack and capability API graph.
 
 ## Abstract behavior map
 
@@ -405,7 +405,7 @@ visual/OCR enrichment
 optional cleanup/chapter transformations
 ```
 
-Each capability should have a verification checklist in [`docs/workflow.md`](workflow.md) and concrete function-level details in [`docs/graph.md`](graph.md).
+Each capability should have a verification checklist in [`docs/workflow.md`](workflow.md) and concrete function-level details in [`docs/graph/`](graph/).
 
 ## Architectural anti-patterns
 

@@ -1,12 +1,12 @@
 # vctx
 
-`vctx` is a CLI for turning video URLs and media files into clean, readable, timestamped context packs.
+`vctx` turns video URLs, local media, and transcript files into clean, timestamped context packs.
 
-It is designed for AI agents, scripts, and technical users who need source-grounded video context without a monolithic video-note application.
+It is built for AI agents, scripts, and technical users who want inspectable source context without a monolithic video-note app.
 
-## What it does
+## What it produces
 
-Given a video URL or local media file, `vctx` prepares artifacts such as:
+A `vctx prepare` run writes a directory of transparent artifacts such as:
 
 ```text
 manifest.json
@@ -18,7 +18,21 @@ context.md
 readable.md
 ```
 
-The primary output is a directory of transparent files that can be read by humans or injected into an AI agent's context.
+Humans can open the Markdown files. AI agents can inject `context.md` or `chunks.json` into their working context.
+
+## Basic workflow
+
+```bash
+vctx prepare ./captions.srt --out ./out/video-001
+```
+
+Then inspect:
+
+```text
+./out/video-001/readable.md
+./out/video-001/context.md
+./out/video-001/manifest.json
+```
 
 ## What it is not
 
@@ -26,67 +40,43 @@ The primary output is a directory of transparent files that can be read by human
 
 - an AI chat app
 - a video Q&A system
-- a knowledge base
+- a personal knowledge base
 - a RAG framework
-- an Electron desktop app
-- a web service
-- an Obsidian/Notion replacement
+- a desktop/web application
 - a summarizer that silently depends on paid AI APIs
 
-The tool prepares context. Downstream agents or users decide how to summarize, analyze, or store it.
-
-## Intended workflow
-
-```bash
-vctx prepare "https://example.com/video" --out ./out/video-001
-```
-
-Then a human or agent can read:
-
-```text
-./out/video-001/context.md
-./out/video-001/readable.md
-./out/video-001/manifest.json
-```
-
-Conceptually:
-
-```text
-video / audio / URL
-  -> metadata extraction
-  -> subtitle or transcript acquisition
-  -> transcript normalization
-  -> timestamp-preserving chunking
-  -> readable Markdown
-  -> agent-ready context Markdown
-  -> manifest
-```
+The tool prepares context. Users or downstream AI agents decide how to summarize, analyze, compare, or store it.
 
 ## Design priorities
 
-- CLI-first
-- readable output
-- machine-readable artifacts
+- clean CLI interface
+- useful defaults and auto-adaptation
+- readable output files
+- machine-readable JSON artifacts
+- source-grounded timestamps and provenance
 - no embedded chat layer
 - no knowledge-management scope creep
-- deterministic by default
-- AI optional and explicit
-- side effects isolated at the edges
-- uniform internal data models
-- external providers hidden behind adapters
-
-## Documentation
-
-- [`docs/context.md`](docs/context.md): project goal, stack, style, and constraints
-- [`docs/architecture.md`](docs/architecture.md): abstract architecture, behavior boundaries, and system principles
-- [`docs/api.md`](docs/api.md): CLI commands, artifact contract, JSON shapes, and agent interaction model
-- [`docs/model-stack.md`](docs/model-stack.md): concrete model transformation tech stack, routing policy, and capability API graph
-- [`docs/workflow.md`](docs/workflow.md): capability levels and verifiable checklists for implemented workflows
-- [`docs/graph.md`](docs/graph.md): function-level module graph, pseudocode, and dependency direction rules
-
+- no hidden paid/cloud model calls
 
 ## Current status
 
-The project has a working Level 0 workflow: local `.srt` / `.vtt` transcript files can be converted into context-pack artifacts with `vctx prepare`.
+Current working workflow:
 
-See [`docs/workflow.md`](docs/workflow.md) for the capability ladder and verification checklist. URL metadata, URL subtitle acquisition, ASR fallback, and optional internal AI routing are planned but should be implemented and verified as separate levels.
+```text
+local .srt / .vtt transcript
+  -> parsed transcript
+  -> normalized transcript
+  -> chunks
+  -> context/readable Markdown
+  -> manifest
+```
+
+Planned workflow:
+
+```text
+video URL / media file
+  -> metadata and subtitles when available
+  -> auto-adapted transcript fallback when needed
+  -> optional visual context when useful
+  -> context pack artifacts
+```

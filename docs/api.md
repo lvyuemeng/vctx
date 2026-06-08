@@ -50,11 +50,11 @@ Options:
 | `--cache-dir DIR` | platform cache dir | Override cache location. |
 | `--keep-temp / --no-keep-temp` | `--no-keep-temp` | Preserve temporary downloads/intermediate files. |
 | `--format NAME` | all default formats | Repeatable output selector. Initial values: `json`, `context`, `readable`, `transcript`. |
-| `--asr MODE` | `off` | Transcript fallback mode when subtitles are unavailable. Values: `off`, `auto`, `local`, `online`. |
-| `--visual-context MODE` | `off` | Optional OCR/frame-description enrichment. Values: `off`, `auto`, `local`, `online`. |
-| `--cleanup MODE` | `off` | Optional model-mediated transcript cleanup after deterministic cleanup. Values: `off`, `auto`, `local`, `online`. |
-| `--chapters MODE` | `off` | Optional chapter-boundary candidate generation. Values: `off`, `auto`, `local`, `online`. |
-| `--allow-free-online / --no-allow-free-online` | `--no-allow-free-online` | Whether `auto` modes may use a curated free zero-config online model/service when local quality is not good enough. |
+| `--auto / --no-auto` | `--auto` | Let `vctx` choose the best available default route for transcript fallback and safe enrichment. |
+| `--offline / --no-offline` | `--no-offline` | Disable online model/service routes even when they are free and zero-config. |
+| `--visual-context / --no-visual-context` | auto | Enable or disable visual OCR/frame-description enrichment. Auto means only when useful and supported. |
+| `--cleanup / --no-cleanup` | auto | Enable or disable safe transcript cleanup beyond deterministic normalization. |
+| `--chapters / --no-chapters` | auto | Enable or disable chapter-boundary candidate generation. |
 
 Default output files:
 
@@ -88,21 +88,21 @@ warning: official subtitles not found; used automatic subtitles for language en
 Failure stderr example:
 
 ```text
-error: no transcript found for input; rerun with --asr auto, --asr local, --asr online, or provide a transcript file
+error: no transcript found for input; no default transcript fallback route is available. Provide a transcript file, install the default ASR extra, configure an online route, or rerun with --no-auto for metadata-only partial output.
 ```
 
-### Model transformation modes
+### Auto-adaptive transformations
 
-Model transformations are capability-level options, not provider menus.
+Model transformations are capability-level defaults, not provider menus. The normal API should avoid asking users to choose `local` vs `online` vs provider names.
 
-Mode semantics:
+Default routing semantics:
 
-| Mode | Meaning |
+| Route | Meaning |
 | --- | --- |
-| `off` | Do not run this model-mediated capability. |
-| `auto` | Use the curated route for the capability: deterministic source data first, then local if good enough, then free zero-config online only when `--allow-free-online` is enabled and the route is available. |
-| `local` | Use the curated local implementation for the capability. Fail clearly if that local capability is not installed or supported. |
-| `online` | Use the curated configured-online route. This is explicit because it may require credentials, upload media/text, or cost money. |
+| deterministic | Use source data such as official subtitles, automatic subtitles, or user-provided transcripts. |
+| zero-config | Use the best curated no-config route for the capability: local if good enough, otherwise free zero-config online if safe/stable enough and not offline. |
+| configured-online | Use the configured project/user provider when quality requires it and configuration exists. |
+| unavailable | Fail clearly or write a partial manifest, depending on request policy. |
 
 API graph for model transformations:
 
@@ -112,26 +112,26 @@ prepare INPUT
        -> platform metadata
        -> official/manual subtitles
        -> automatic subtitles
-  -> if transcript unavailable and --asr != off:
-       -> route asr mode
+  -> if transcript unavailable and auto routing is enabled:
+       -> route default transcript fallback
        -> local/free-online/configured-online ASR
        -> timestamped transcript
   -> deterministic transcript normalization
-  -> if --cleanup != off:
-       -> route cleanup mode
+  -> if cleanup policy enables cleanup:
+       -> route default cleanup
        -> cleaned transcript + transform evidence
-  -> if --visual-context != off:
+  -> if visual-context policy enables visual context:
        -> sample frames
-       -> route OCR/frame-description mode
+       -> route default OCR/frame-description
        -> timestamped visual records + transform evidence
-  -> if --chapters != off:
-       -> route chapter mode
+  -> if chapter policy enables chapters:
+       -> route default chapter candidates
        -> chapter candidates + transform evidence
   -> chunk/render/write artifacts
   -> manifest records every route and provider actually used
 ```
 
-The CLI should not expose raw provider choices such as `provider-x:model-y` for normal usage. If two implementations can serve the same capability, `vctx` should choose the best project default and expose only the capability/mode.
+The CLI should not expose raw provider choices such as `provider-x:model-y` for normal usage. If two implementations can serve the same capability, `vctx` should choose the best project default and record the actual choice in `manifest.json`.
 
 ### `vctx metadata`
 

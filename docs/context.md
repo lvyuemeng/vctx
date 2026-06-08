@@ -1,122 +1,93 @@
 # vctx Project Context
 
-## Project goal
+## Goal
 
-`vctx` is a small CLI tool that converts video URLs or local media files into clean, readable, timestamped context packs for downstream AI agents and automation.
+`vctx` is a small CLI utility that converts video URLs, local media, or transcript files into clean, timestamped context packs for downstream AI agents and automation.
 
-The tool prepares source material. It does not try to become an AI assistant, video-note application, knowledge base, RAG system, or chat interface.
-
-Primary job:
+Primary flow:
 
 ```text
-video / audio / supported URL
+source input
   -> metadata
-  -> transcript
-  -> normalized transcript
+  -> transcript / visual context when available
+  -> normalized source records
   -> chunks
   -> readable Markdown
   -> agent-ready context Markdown
   -> manifest
 ```
 
-The output should be easy for a human to inspect and easy for an AI agent to inject into context.
+The product is the artifact directory, not an embedded assistant.
 
 ## Non-goals
 
-`vctx` should not grow into a monolith.
+Do not build these into `vctx`:
 
-Out of scope by default:
-
-- embedded AI chat
-- Q&A over videos as a user interface
+- chat UI or Q&A interface
+- final summarization as the default product behavior
 - personal knowledge management
-- cross-video concept stores
-- RAG indexes
-- desktop UI
-- web application backend
-- task-history database
+- RAG/vector database
+- cross-video memory or concept store
+- desktop/web app backend
 - provider-heavy configuration UI
-- implicit or unconfigured cloud AI calls
-- opinionated GitHub / Obsidian / Notion syncing
+- hidden paid/cloud model calls
 
-Optional features may exist only when they preserve the CLI's role as a context-preparation utility.
+External AI agents should read `context.md`, `chunks.json`, `manifest.json`, and other artifacts to summarize, explain, compare, or build knowledge flow.
 
-Internal AI use is allowed when it is a bounded transformation step, for example ASR, OCR, VLM frame description, language detection, noisy transcript cleanup, chapter-boundary suggestion, or provider routing. The boundary is not "no AI". The boundary is "no AI user-interface/assistant layer inside `vctx`." External agents should handle user conversation, final summarization, Q&A, memory, and knowledge workflows.
-
-## Intended users
-
-`vctx` is for:
-
-- AI agents that need clean video context
-- technical users who want transparent artifacts
-- scripts and batch workflows
-- developers who want a predictable media-to-context primitive
-
-The main interface is the command line. The output format is the product.
-
-## Design principles
+## Core principles
 
 ### CLI first
 
-Every core capability should be callable non-interactively:
+Every capability must be callable non-interactively:
 
 ```bash
-vctx prepare URL --out DIR
+vctx prepare INPUT --out DIR
 ```
 
-Commands should have clear inputs, outputs, exit codes, stdout/stderr behavior, and file artifacts.
+The CLI should be clean enough for an AI agent to call through context injection.
 
-### No embedded AI communication layer
+### Auto-adaptive by default
 
-Do not build a chat layer inside the tool. External agents already provide that.
+Prefer automatic routing and sensible defaults over provider/mode menus.
 
-If AI is used internally, it must be for a bounded internal step such as transcription, OCR, or optional structural cleanup. It should be explicit, replaceable, and not required for default usage.
+Default policy:
 
-Default behavior should require no paid model configuration.
-
-### Readable and machine-readable
-
-Each run should produce both:
-
-- human-readable Markdown
-- machine-readable JSON
-
-Readable output should not be an afterthought. A user should be able to open the output directory and understand what happened.
-
-### Source-grounded
-
-Preserve timestamps and source metadata everywhere practical.
-
-Downstream agents should be able to cite or inspect the source ranges behind a chunk.
-
-### Deterministic by default
-
-Default steps should be deterministic where possible:
-
-- metadata extraction
-- subtitle extraction
-- transcript normalization
-- chunking
-- rendering
-- manifest generation
-
-AI-mediated or heuristic behavior should be clearly identified in the manifest.
-
-### Explicit storage
-
-The caller chooses where artifacts are written:
-
-```bash
-vctx prepare URL --out ./out/video-001
+```text
+deterministic source data first
+  -> curated zero-config route if needed
+  -> free zero-config online route if it is better and allowed
+  -> configured online route only when explicitly configured/enabled
 ```
 
-The tool should not assume a knowledge-store repo, application database, or long-term memory system.
+Users should normally choose capability intent, not provider details.
 
-A cache may exist for temporary media files, but durable output belongs in the explicit `--out` directory.
+### Internal AI is allowed as transformation
+
+Model-mediated behavior is acceptable when it transforms source material into source-grounded records:
+
+```text
+audio -> timestamped transcript
+frame -> OCR text
+frame -> visual description
+noisy transcript -> cleaned transcript
+transcript/chunks -> chapter candidates
+```
+
+It must not become a user-facing assistant layer. Every model-mediated step must be recorded in `manifest.json`.
+
+### Source-grounded artifacts
+
+Preserve timestamps, source ids, provenance, and warnings wherever practical. Generated model output must be labeled as generated, not source text.
+
+### Atomic modules and tree dependencies
+
+Implementation modules should be isolated and atomic. Dependencies should form a tree/DAG from outer orchestration toward inner data models. Avoid cycles and provider-specific leakage.
+
+See [`docs/graph/`](graph/) for per-module dependency/API graphs.
 
 ## Expected artifacts
 
-A typical output directory should look like:
+Typical output directory:
 
 ```text
 out/video-001/
@@ -130,197 +101,54 @@ out/video-001/
   readable.md
 ```
 
-Optional artifacts:
+Optional capability artifacts:
 
 ```text
-assets/
-  frames/
+visual_records.json
+chapter_candidates.json
+assets/frames/
 audio/
-transcription.json
-ocr.json
 ```
 
-Heavy temporary artifacts should stay out of durable output unless explicitly requested.
+Heavy temporary artifacts should stay in cache/temp unless explicitly requested.
 
-## Technology stack and dependencies
+## Technology stack
 
-### Stack choice
+Default runtime dependencies:
 
-Use a modern Python CLI stack:
+| Dependency | Role |
+| --- | --- |
+| `typer` | CLI framework |
+| `pydantic` | internal models and JSON artifacts |
+| `yt-dlp` | metadata/subtitle/media extraction adapter |
+| `platformdirs` | cache/config directories |
+| `webvtt-py` | WebVTT parsing |
+| `srt` | SRT parsing |
 
-- Python 3.12 as the preferred development target
-- Python 3.11+ as the compatibility floor unless a dependency forces otherwise
-- `uv` for environment management, dependency locking, running tools, and publishing workflows
-- `hatchling` as the build backend
-- `pytest` for tests
-- `ruff` for linting and formatting
-- `ty` for fast static type checking while the project is young and changing
+Development/build:
 
-Keep dependencies modest. Do not add frameworks unless they directly support the CLI's core role.
+| Dependency | Role |
+| --- | --- |
+| `uv` | environment, lock, run, publish workflow |
+| `hatchling` | build backend |
+| `pytest` | tests |
+| `ruff` | lint/format |
+| `ty` | type checking |
 
-### Runtime dependencies
+Detailed model-transformation stack lives in [`docs/graph/model-transforms.md`](graph/model-transforms.md).
 
-Use these as the default runtime dependency set:
+## Dependency policy
 
-| Dependency | Role | Reason |
-| --- | --- | --- |
-| `typer` | CLI framework | Modern type-hint-based CLI with good help output. Prefer `typer` over raw `click` for this project because command signatures stay readable and typed. |
-| `pydantic` | Internal models and artifact schemas | Gives one uniform internal representation and JSON serialization/validation. Use Pydantic v2 style. |
-| `yt-dlp` | Media metadata, subtitle discovery, subtitle download, optional media download | Best-supported active extractor for YouTube, Bilibili, and many video sites. Treat it as an adapter at the edge. |
-| `platformdirs` | Cache/config directory discovery | Avoid hard-coded OS paths for cache directories. |
-| `webvtt-py` | WebVTT subtitle parsing | Useful for `.vtt` subtitles from video platforms. Keep subtitle parsing behind an adapter. |
-| `srt` | SRT subtitle parsing | Small focused parser for `.srt` subtitle files. Keep subtitle parsing behind an adapter. |
-
-Notes:
-
-- `rich` is acceptable for readable terminal output. If using `typer[standard]`, `rich` may arrive through Typer's standard extras. Keep rich formatting at the CLI boundary; do not leak console concerns into core logic.
-- Prefer Pydantic models over raw dictionaries at internal boundaries. Raw provider payloads should be converted immediately at adapter boundaries.
-- Avoid `tiktoken` as a default dependency. It is useful for model-specific counting but makes the core too provider-shaped. Default chunking can use approximate token counts; model-specific tokenizers can be optional later.
-- Avoid `orjson` as a default dependency until JSON performance is a proven bottleneck. Standard library JSON is good enough for initial artifacts.
-- Avoid `jsonschema` as a default dependency if Pydantic validation and schema export are sufficient. Add it only if independent JSON Schema validation becomes a real CLI feature.
-
-### Optional dependencies
-
-Detailed model-transformation technology choices live in [`docs/model-stack.md`](model-stack.md). This section defines dependency policy only.
-
-Optional extras should map to isolated capabilities:
-
-| Extra | Candidate dependency | Purpose | Rule |
-| --- | --- | --- | --- |
-| `asr` | `faster-whisper` | Local transcription fallback when subtitles are unavailable | Must be explicit; not required for default `prepare` when subtitles exist. |
-| `online-ai` | `httpx` or provider-specific SDKs behind adapters | Optional online ASR/OCR/VLM/cleanup calls when local quality is not good enough, or when a free zero-config online model is the best practical route | Online calls must be capability-scoped, manifest-recorded, and never hidden from the caller. |
-| `ocr` | focused local OCR library/tool adapter or online vision adapter | Optional OCR over extracted frames | Prefer one curated default per capability; do not expose raw command wiring as the primary UX. |
-| `dev` | `pytest`, `ruff`, `ty` | Development and CI | Not runtime dependencies. |
-
-Internal AI dependencies should be selected per capability, not as global core dependencies. For each capability, prefer one curated project default instead of exposing many equivalent choices to the user.
-
-Selection order:
-
-1. Deterministic/non-model source acquisition when available, such as official subtitles or automatic subtitles from the video platform.
-2. Local, efficient, free, zero-configuration model/tool when quality is good enough.
-3. Free, zero-configuration online model/service when it can be connected automatically, quality is materially better than local, and the privacy/cost tradeoff is acceptable for that capability.
-4. Configured online provider through a narrow adapter when quality requires it and the caller explicitly enables/configures it.
-5. Provider-specific SDK only when plain HTTP or a small adapter is insufficient.
-
-External command adapters may exist for development or escape-hatch integrations, but they should not be the primary user-facing workflow because they are too raw for the project goal.
-
-Do not add model/provider dependencies to the default runtime path unless they are required for a curated default capability.
-
-External command-line tools may be required for specific features:
-
-| Tool | Purpose | Default requirement |
-| --- | --- | --- |
-| `ffmpeg` | Audio extraction, subtitle conversion, frame extraction | Optional at first; required only for media download/transcription/frame features. |
-| `yt-dlp` executable | Alternative to Python API usage | Prefer Python package integration first; shell out only behind the adapter if needed. |
-
-### Dependency selection rules
-
-Before adding a dependency, check:
-
-1. Is it actively maintained?
-2. Does it solve a real current problem?
-3. Can it stay behind an adapter or boundary?
-4. Does it avoid pulling the project toward an app/server/knowledge-base shape?
-5. Is the standard library good enough for now?
-
-Prefer small, focused libraries over frameworks.
-
-Do not add dependencies for:
-
-- chat
-- RAG
-- vector databases
-- web servers
-- desktop UI
-- cloud LLM providers as required/default dependencies
-- provider SDKs in core modules
-- knowledge management
-- provider-specific token counting by default
-
-Internal AI dependencies are allowed only when tied to an explicit transformation capability such as ASR, OCR, frame description, transcript cleanup, chapter suggestion, language detection, or routing.
-
-## Code style
-
-Code should be boring, typed, and explicit.
-
-Prefer:
-
-- small pure functions
-- typed data models
-- narrow interfaces
-- explicit errors
-- predictable file writes
-- unit tests around transformation logic
-- integration tests around CLI behavior
-
-Avoid:
-
-- hidden global state
-- long procedural scripts
-- implicit network calls in pure logic
-- provider-specific types leaking across the codebase
-- deeply nested conditionals
-- stringly typed internal data
-- business logic mixed into CLI argument parsing
-
-## Separation of side effects
-
-Keep side effects at the edges.
-
-Side-effecting operations include:
-
-- network requests
-- running `yt-dlp`
-- reading/writing files
-- invoking ffmpeg
-- invoking ASR/OCR tools
-- shelling out to external processes
-
-Core transformation logic should accept data and return data:
-
-```text
-TranscriptSegment[] -> CleanTranscript
-CleanTranscript -> Chunk[]
-Chunks -> Markdown
-Artifacts -> Manifest
-```
-
-This makes the tool easier to test and prevents spaghetti architecture.
-
-## Uniform internal representation
-
-External sources differ, but internal logic should use one consistent representation.
-
-Examples:
-
-```text
-YouTube subtitle line
-Bilibili subtitle line
-Whisper segment
-manual transcript segment
-```
-
-should normalize into the same internal transcript segment model.
-
-Do not let external provider shape leak into chunking, rendering, or manifest generation.
-
-## Decouple external integrations
-
-External integrations should be adapters.
-
-Examples:
-
-- `yt-dlp` adapter
-- subtitle adapter
-- local file adapter
-- ASR adapter
-- OCR adapter
-
-Adapters convert external formats into internal models. Internal code should not depend on provider-specific response shapes.
+- Keep default install small.
+- Add optional extras per capability, not as global provider dependencies.
+- Prefer Pydantic models over raw dictionaries at internal boundaries.
+- Do not leak provider response shapes beyond adapters.
+- Avoid `tiktoken`, `orjson`, `jsonschema`, provider SDKs, web servers, vector DBs, and RAG dependencies by default.
+- External command adapters may exist as escape hatches, but they are not the primary UX.
 
 ## Commit style
 
-Use short prefix-based commit messages:
+Use prefix-based commit messages:
 
 ```text
 [prefix]: content
@@ -329,31 +157,20 @@ Use short prefix-based commit messages:
 Examples:
 
 ```text
-[docs]: define project context and architecture
-[feat]: add local transcript prepare pipeline
+[docs]: define module graph
+[feat]: add url subtitle acquisition
 [fix]: handle empty transcript chunks
 [test]: cover subtitle parsing
-[chore]: update dependency lockfile
+[chore]: update lockfile
 ```
-
-Prefer prefixes such as:
-
-- `[docs]` for documentation-only changes
-- `[feat]` for user-visible features
-- `[fix]` for bug fixes
-- `[test]` for test-only changes
-- `[refactor]` for internal restructuring without behavior changes
-- `[chore]` for tooling, dependencies, and maintenance
-
-Keep the content part concise and imperative where possible.
 
 ## Quality bar
 
 A feature is not done until:
 
 - it is covered by tests where practical
-- it writes clear artifacts
+- artifacts are readable and machine-readable
 - errors are understandable
-- the manifest reflects what happened
-- generated Markdown is readable
+- `manifest.json` reflects what happened
 - generated JSON is stable enough for agent use
+- `ruff`, `ty`, and `pytest` pass
