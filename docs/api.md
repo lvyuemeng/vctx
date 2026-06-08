@@ -50,6 +50,11 @@ Options:
 | `--cache-dir DIR` | platform cache dir | Override cache location. |
 | `--keep-temp / --no-keep-temp` | `--no-keep-temp` | Preserve temporary downloads/intermediate files. |
 | `--format NAME` | all default formats | Repeatable output selector. Initial values: `json`, `context`, `readable`, `transcript`. |
+| `--asr MODE` | `off` | Transcript fallback mode when subtitles are unavailable. Values: `off`, `auto`, `local`, `online`. |
+| `--visual-context MODE` | `off` | Optional OCR/frame-description enrichment. Values: `off`, `auto`, `local`, `online`. |
+| `--cleanup MODE` | `off` | Optional model-mediated transcript cleanup after deterministic cleanup. Values: `off`, `auto`, `local`, `online`. |
+| `--chapters MODE` | `off` | Optional chapter-boundary candidate generation. Values: `off`, `auto`, `local`, `online`. |
+| `--allow-free-online / --no-allow-free-online` | `--no-allow-free-online` | Whether `auto` modes may use a curated free zero-config online model/service when local quality is not good enough. |
 
 Default output files:
 
@@ -83,8 +88,50 @@ warning: official subtitles not found; used automatic subtitles for language en
 Failure stderr example:
 
 ```text
-error: no transcript found for input; rerun with an ASR-enabled build or provide a transcript file
+error: no transcript found for input; rerun with --asr auto, --asr local, --asr online, or provide a transcript file
 ```
+
+### Model transformation modes
+
+Model transformations are capability-level options, not provider menus.
+
+Mode semantics:
+
+| Mode | Meaning |
+| --- | --- |
+| `off` | Do not run this model-mediated capability. |
+| `auto` | Use the curated route for the capability: deterministic source data first, then local if good enough, then free zero-config online only when `--allow-free-online` is enabled and the route is available. |
+| `local` | Use the curated local implementation for the capability. Fail clearly if that local capability is not installed or supported. |
+| `online` | Use the curated configured-online route. This is explicit because it may require credentials, upload media/text, or cost money. |
+
+API graph for model transformations:
+
+```text
+prepare INPUT
+  -> deterministic acquisition
+       -> platform metadata
+       -> official/manual subtitles
+       -> automatic subtitles
+  -> if transcript unavailable and --asr != off:
+       -> route asr mode
+       -> local/free-online/configured-online ASR
+       -> timestamped transcript
+  -> deterministic transcript normalization
+  -> if --cleanup != off:
+       -> route cleanup mode
+       -> cleaned transcript + transform evidence
+  -> if --visual-context != off:
+       -> sample frames
+       -> route OCR/frame-description mode
+       -> timestamped visual records + transform evidence
+  -> if --chapters != off:
+       -> route chapter mode
+       -> chapter candidates + transform evidence
+  -> chunk/render/write artifacts
+  -> manifest records every route and provider actually used
+```
+
+The CLI should not expose raw provider choices such as `provider-x:model-y` for normal usage. If two implementations can serve the same capability, `vctx` should choose the best project default and expose only the capability/mode.
 
 ### `vctx metadata`
 
@@ -219,6 +266,13 @@ Shape:
       "name": "transcript.extract",
       "status": "ok",
       "detail": "official_subtitles:en:vtt"
+    },
+    {
+      "name": "transform.asr",
+      "status": "skipped",
+      "detail": "subtitles_available",
+      "provider": null,
+      "model": null
     }
   ],
   "warnings": []
@@ -234,7 +288,7 @@ Fields:
 | `status` | `ok`, `partial`, or `error`. |
 | `input` | Original user input string. |
 | `artifacts` | Files written relative to output directory. |
-| `steps` | Ordered pipeline steps. |
+| `steps` | Ordered pipeline steps. Transform steps may include `provider`, `model`, source/output artifact refs, and deterministic/upload/cost hints. |
 | `warnings` | Recoverable issues. |
 
 ### `metadata.json`

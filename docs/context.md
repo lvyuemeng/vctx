@@ -186,7 +186,7 @@ Optional extras should map to isolated capabilities:
 | Extra | Candidate dependency | Purpose | Rule |
 | --- | --- | --- | --- |
 | `asr` | `faster-whisper` | Local transcription fallback when subtitles are unavailable | Must be explicit; not required for default `prepare` when subtitles exist. |
-| `online-ai` | `httpx` or provider-specific SDKs behind adapters | Optional online ASR/OCR/VLM/cleanup calls when local quality is not good enough | Must never be required by default; provider calls must be explicit and manifest-recorded. |
+| `online-ai` | `httpx` or provider-specific SDKs behind adapters | Optional online ASR/OCR/VLM/cleanup calls when local quality is not good enough, or when a free zero-config online model is the best practical route | Online calls must be capability-scoped, manifest-recorded, and never hidden from the caller. |
 | `ocr` | focused local OCR library/tool adapter or online vision adapter | Optional OCR over extracted frames | Prefer one curated default per capability; do not expose raw command wiring as the primary UX. |
 | `dev` | `pytest`, `ruff`, `ty` | Development and CI | Not runtime dependencies. |
 
@@ -194,9 +194,11 @@ Internal AI dependencies should be selected per capability, not as global core d
 
 Selection order:
 
-1. Local, efficient, free, zero-configuration model/tool when quality is good enough.
-2. Online provider through a narrow adapter when local quality is not good enough and the user explicitly enables it.
-3. Provider-specific SDK only when plain HTTP or a small adapter is insufficient.
+1. Deterministic/non-model source acquisition when available, such as official subtitles or automatic subtitles from the video platform.
+2. Local, efficient, free, zero-configuration model/tool when quality is good enough.
+3. Free, zero-configuration online model/service when it can be connected automatically, quality is materially better than local, and the privacy/cost tradeoff is acceptable for that capability.
+4. Configured online provider through a narrow adapter when quality requires it and the caller explicitly enables/configures it.
+5. Provider-specific SDK only when plain HTTP or a small adapter is insufficient.
 
 External command adapters may exist for development or escape-hatch integrations, but they should not be the primary user-facing workflow because they are too raw for the project goal.
 

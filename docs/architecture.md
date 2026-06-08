@@ -124,7 +124,8 @@ These transformations must be:
 - explicit through command options or configuration
 - selected by a small curated routing policy rather than a large user-facing provider menu
 - local, efficient, free, and zero-configuration when local quality is good enough
-- allowed to use online providers when local quality is not good enough and the user explicitly enables that route
+- allowed to use free zero-configuration online models/services automatically when they are the best practical route and the manifest makes the upload/network behavior clear
+- allowed to use configured online providers when local/free-online quality is not good enough and the user explicitly enables that route
 - replaceable through adapters internally
 - recorded in the manifest
 - traceable back to source material when practical

@@ -495,7 +495,8 @@ TransformKind = Literal[
 
 TransformProvider = Literal[
     "local",
-    "online",
+    "free-online",
+    "configured-online",
     "external-command",  # escape hatch only; not primary UX
 ]
 
@@ -510,11 +511,14 @@ class TransformRequest(BaseModel):
 CLI should expose capability-level choices, not a broad provider menu. Examples:
 
 ```text
+--asr auto             # curated route: subtitles -> local -> free-online if allowed
 --asr local            # curated local ASR route
---asr online           # curated online ASR route, explicit because it may cost/upload
+--asr online           # curated configured-online ASR route, explicit because it may cost/upload
+--cleanup auto         # deterministic/local/free-online route when enabled
 --cleanup local        # curated local cleanup if available
---cleanup online       # curated online cleanup, explicit
---visual-context local # curated local OCR/VLM route if available
+--cleanup online       # curated configured-online cleanup, explicit
+--visual-context auto  # curated route: local OCR/VLM -> free-online if useful
+--visual-context local
 --visual-context online
 ```
 
@@ -633,30 +637,33 @@ The route policy chooses the best implementation for a capability with minimal u
 ```text
 Capability requested?
   -> no: skip
-  -> yes:
-       prefer curated local route if quality is good enough
-       else require explicit online route
+  -> yes/auto:
+       use deterministic source data first when available
+       else prefer curated local route if quality is good enough
+       else use free zero-config online route if available, useful, and allowed by policy
+       else require explicit configured-online route
        else fail clearly or write partial manifest
 ```
 
 Recommended defaults by capability:
 
-| Capability | Preferred route | Online route | Notes |
-| --- | --- | --- | --- |
-| ASR | local `faster-whisper` small/base after explicit `--asr local` | explicit `--asr online` if local quality/speed is not acceptable | ASR solves the no-transcript case. |
-| OCR | curated local OCR if dependency/tooling is acceptable | explicit online vision/OCR when local OCR quality is poor | Keep OCR output timestamped by frame. |
-| Frame description | local only if a small good model is available | likely online for quality | Must be labeled as generated visual description. |
-| Transcript cleanup | deterministic cleanup first; local model if good enough | explicit online cleanup for quality | Must preserve timestamps/source ids. |
-| Chapter suggestion | deterministic/time-based first; model route optional | explicit online if quality matters | Produces candidates, not final summary. |
-| Language detection | lightweight local heuristic/library | online only if needed | Should not become a general LLM call by default. |
+| Capability | Auto route | Local route | Free-online route | Configured-online route | Notes |
+| --- | --- | --- | --- | --- | --- |
+| ASR | subtitles first, then local ASR, then free-online if allowed | `faster-whisper` small/base | acceptable only if free, zero-config, stable enough, and upload behavior is clear | explicit `--asr online` if quality/speed requires it | ASR solves the no-transcript case. |
+| OCR | local OCR first; free-online if local OCR is poor and allowed | curated local OCR | useful for slide/screenshot text if available without config | explicit online vision/OCR when quality matters | Keep OCR output timestamped by frame. |
+| Frame description | local only if good; otherwise free-online/configured-online | local VLM only if efficient and good enough | preferred over weak local models if free/zero-config exists | likely best quality | Must be labeled as generated visual description. |
+| Transcript cleanup | deterministic cleanup first, then local/free-online if enabled | small local cleanup model only if quality is good enough | acceptable for punctuation/format cleanup if no config/cost | explicit configured online cleanup for quality | Must preserve timestamps/source ids. |
+| Chapter suggestion | deterministic/time-based first; model route optional | local if good enough | acceptable for rough chapter candidates | configured online if quality matters | Produces candidates, not final summary. |
+| Language detection | lightweight local first | heuristic/library | free-online only if local fails | configured online rarely needed | Should not become a general LLM call by default. |
 
 This policy keeps the interface small:
 
 ```text
---asr local|online|off
---visual-context local|online|off
---cleanup local|online|off
---chapters local|online|off
+--asr auto|local|online|off
+--visual-context auto|local|online|off
+--cleanup auto|local|online|off
+--chapters auto|local|online|off
+--allow-free-online / --no-allow-free-online
 ```
 
 No provider-specific selection should appear unless necessary for configuration or debugging.
@@ -668,7 +675,7 @@ Every transform step must add manifest evidence:
 ```text
 transform.<kind>
   status: ok | skipped | warning | error
-  provider: local | online | external-command
+  provider: local | free-online | configured-online | external-command
   name: provider/tool name
   model: optional model id
   deterministic: false unless guaranteed
