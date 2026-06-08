@@ -3,10 +3,11 @@ from __future__ import annotations
 from vctx.app.errors import UnsupportedSourceError
 from vctx.sources.base import SourceAdapter
 from vctx.sources.local_file_source import LocalFileSourceAdapter
+from vctx.sources.ytdlp_source import YtDlpSourceAdapter
 
 
 def detect_source_adapter(value: str) -> SourceAdapter:
-    adapters: list[SourceAdapter] = [LocalFileSourceAdapter()]
+    adapters: list[SourceAdapter] = [LocalFileSourceAdapter(), YtDlpSourceAdapter()]
     for adapter in adapters:
         if adapter.can_handle(value):
             return adapter
