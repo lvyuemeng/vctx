@@ -1,0 +1,41 @@
+[project]
+name = "vctx"
+version = "0.1.0"
+description = "Video to context pack CLI for AI agents and automation."
+authors = [
+    { name = "lvyuemeng", email = "lv15623448685@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "platformdirs>=4.10.0",
+    "pydantic>=2.13.4",
+    "srt>=3.5.3",
+    "typer>=0.26.7",
+    "webvtt-py>=0.5.1",
+    "yt-dlp>=2026.3.17",
+]
+
+[project.scripts]
+vctx = "vctx:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.16",
+    "ty>=0.0.44",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
