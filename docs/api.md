@@ -52,6 +52,7 @@ Options:
 | `--format NAME` | all default formats | Repeatable output selector. Initial values: `json`, `context`, `readable`, `transcript`. |
 | `--workflow NAME` | `default` | Select a meaningful preparation workflow instance: `default`, `transcript`, `visual`, `full`, or `metadata`. |
 | `--offline` | unset | Use the offline workflow policy; network/model-service routes are unavailable. |
+| `--config PATH` | unset | Optional TOML config file. Missing fields keep built-in defaults; CLI/request values override config fields. |
 
 Default output files:
 
@@ -87,6 +88,87 @@ Failure stderr example:
 ```text
 error: no transcript found for input; no default transcript fallback route is available. Provide a transcript file, install the default ASR extra, configure an online route, or use --workflow metadata for metadata-only output.
 ```
+
+### Config file contract
+
+Config is optional and exists to provide defaults and advanced provider credentials without turning the CLI into a provider menu.
+
+Layering:
+
+```text
+built-in defaults
+  -> config file passed by --config
+  -> CLI/request overrides
+  -> ResolvedConfig
+```
+
+Missing fields are not errors. They resolve to `auto`, `default`, or the built-in value for that field. Secrets are never stored directly; provider config references environment variable names.
+
+Example:
+
+```toml
+[runtime]
+workflow = "transcript"          # default | transcript | visual | full | metadata
+offline = false
+cache_dir = ".cache/vctx"
+keep_temp = false
+
+[source]
+preferred_language = "en"
+subtitle_fallback_order = ["manual", "automatic", "fallback"]
+media_download_policy = "auto"   # auto | never
+
+[output]
+formats = ["json", "context", "readable", "transcript"]
+chunk_max_chars = 6000
+chunk_max_seconds = 900
+
+[transforms.asr]
+enabled = "auto"                 # auto | true | false
+route = "auto"                   # auto | default | local | free-online | configured-online | disabled | explicit
+allow_network = true
+allow_upload = false
+allow_paid = false
+preferred_provider = "openai-whisper" # advanced only
+model = "whisper-1"                    # advanced only
+
+[transforms.visual_context]
+enabled = "false"
+
+[transforms.cleanup]
+enabled = "auto"
+
+[transforms.chapters]
+enabled = "auto"
+
+[providers.asr.openai-whisper]
+type = "openai-compatible-audio"
+base_url = "https://api.openai.com/v1/audio/transcriptions"
+api_key_env = "OPENAI_API_KEY"
+model = "whisper-1"
+cost_mode = "paid"              # free | paid | local | unknown
+```
+
+Field semantics:
+
+| Field | Semantics |
+| --- | --- |
+| `runtime.workflow` | Default workflow profile when CLI `--workflow` is not supplied. |
+| `runtime.offline` | Disables network and upload routes unless CLI overrides with a future explicit online policy. Current `--offline` always forces offline. |
+| `runtime.cache_dir` | Stores reusable cache such as ASR model weights and media temp files; output artifacts still go to `--out`. |
+| `source.preferred_language` | Default subtitle/ASR language hint; CLI `--language` overrides. |
+| `source.subtitle_fallback_order` | Source adapter policy for official/manual subtitles, automatic captions, and fallback language. |
+| `source.media_download_policy` | `auto` allows media acquisition only when a selected workflow needs it; `never` blocks media downloads. |
+| `output.formats` | Default render/artifact formats when CLI `--format` is not supplied. |
+| `transforms.<capability>.enabled` | `auto` lets planner decide; `true` requests capability; `false` disables it. |
+| `transforms.<capability>.route` | Normal users should leave `auto`; advanced values constrain route planning. |
+| `allow_network` | Allows metadata/network calls for that transform route. |
+| `allow_upload` | Allows uploading media/frames/text to configured online providers. |
+| `allow_paid` | Allows providers declared as paid. Default is false. |
+| `preferred_provider` / `model` | Advanced/debug constraints, not normal CLI UX. Unsupported values fail clearly during planning. |
+| `providers.asr.<name>.api_key_env` | Environment variable containing a credential. The config stores only the variable name. |
+
+Configured-online ASR is selected only when policy allows network/upload, the provider config exists, required credentials are present, and paid routes have `allow_paid=true`.
 
 ### Auto-adaptive transformations
 

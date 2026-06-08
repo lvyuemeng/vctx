@@ -45,6 +45,10 @@ def prepare_command(
             help="Use the offline workflow policy; network routes unavailable.",
         ),
     ] = False,
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Optional TOML config file for workflow defaults."),
+    ] = None,
 ) -> None:
     try:
         result = prepare_context_pack(
@@ -59,6 +63,7 @@ def prepare_command(
                 keep_temp=keep_temp,
                 workflow=workflow,
                 offline=offline,
+                config_path=config,
             )
         )
     except VctxError as exc:

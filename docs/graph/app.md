@@ -141,29 +141,51 @@ Workflow instances are decisive presets, not vague trigger flags:
 
 ### Config file sketch
 
-Config should be small and optional:
+Config is small, optional, and layered before route planning. Missing fields inherit built-in defaults.
 
 ```toml
 [runtime]
 offline = false
 workflow = "default"
+cache_dir = ".cache/vctx"
+keep_temp = false
 
 [source]
 preferred_language = "auto"
+subtitle_fallback_order = ["manual", "automatic", "fallback"]
+media_download_policy = "auto"   # auto | never
 
-[workflow.default]
-# Optional. Missing capability fields resolve to default/auto.
-visual_context = "auto"
-cleanup = "auto"
-chapters = "auto"
+[output]
+formats = ["json", "context", "readable", "transcript"]
+chunk_max_chars = 6000
+chunk_max_seconds = 900
 
-[providers.default_online]
-# Optional. Missing means configured-online routes are unavailable.
-base_url = "https://..."
-api_key_env = "VCTX_API_KEY"
+[transforms.asr]
+enabled = "auto"                 # auto | true | false
+route = "auto"                   # auto | default | local | free-online | configured-online | disabled | explicit
+allow_network = true
+allow_upload = false
+allow_paid = false
+preferred_provider = "openai-whisper" # advanced/debug only
+model = "whisper-1"                    # advanced/debug only
+
+[providers.asr.openai-whisper]
+type = "openai-compatible-audio"
+base_url = "https://api.openai.com/v1/audio/transcriptions"
+api_key_env = "OPENAI_API_KEY"
+model = "whisper-1"
+cost_mode = "paid"
 ```
 
-If `[providers.default_online]` is missing, dispatch does not fail during config load. It simply marks configured-online routes as unavailable.
+If `[providers.*]` is missing, config loading succeeds. Route planning marks configured-online unavailable and tries deterministic/local/free routes or writes an actionable partial result.
+
+Secrets rule:
+
+```text
+config stores api_key_env = "ENV_VAR_NAME"
+runtime reads ENV_VAR_NAME only when selected provider needs credentials
+manifest redacts credential values as [REDACTED]
+```
 
 ## API graph
 

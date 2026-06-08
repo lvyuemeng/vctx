@@ -36,6 +36,9 @@ Implemented:
 
 - `PrepareRequest` and `ResolvedConfig` models exist.
 - Missing request fields resolve to default/auto values.
+- Optional TOML `--config` loading exists for runtime/source/output/transform/provider defaults.
+- Configured provider entries are parsed into `ResolvedConfig.providers` without exposing provider menu flags.
+- CLI/request values override config defaults where current request shape can distinguish the override.
 - `prepare_context_pack()` orchestrates source detection, metadata extraction, transcript parsing, normalization, chunking, rendering, artifact writing, and manifest writing.
 - Workflow profiles exist: `default`, `transcript`, `visual`, `full`, `metadata`.
 
@@ -44,13 +47,13 @@ Implemented:
 
 Missing or incomplete:
 
-- Config layering is not implemented yet:
+- Full config layering is incomplete:
 
   ```text
-  BuiltInDefaults -> project config -> user config -> environment -> CLI/request overrides
+  BuiltInDefaults -> explicit --config file -> CLI/request overrides
   ```
 
-  Current behavior is request/default resolution only; `config_path`, project config, user config, and environment-driven provider settings are placeholders.
+  Project config discovery, user config discovery, and environment-derived provider availability are not implemented yet.
 
 - `prepare` only records an ASR planning skip for transcript-present flows. It does not invoke ASR fallback when transcript payload is missing.
 - Cleanup, visual context, and chapters are planned in config/transform code, but not executed in the app workflow.
@@ -87,6 +90,8 @@ Implemented:
 
 - Plans can return `skipped`, `deterministic`, `local`, `free-online`, `configured-online`, or `unavailable`.
 - Offline policy disables network/upload routes.
+- ASR planning uses configured provider identity/model from policy/environment when configured-online is selected.
+- Paid configured ASR routes are rejected unless policy sets `allow_paid=true`.
 
 Missing or incomplete:
 

@@ -89,6 +89,7 @@ def test_prepare_help_uses_decisive_flags_without_negation_pairs() -> None:
 
     assert result.exit_code == 0
     assert "--workflow" in result.output
+    assert "--config" in result.output
     assert "--offline" in result.output
     assert "--no-auto" not in result.output
     assert "--no-offline" not in result.output
@@ -97,6 +98,53 @@ def test_prepare_help_uses_decisive_flags_without_negation_pairs() -> None:
     assert "--no-visual-context" not in result.output
     assert "--no-cleanup" not in result.output
     assert "--no-chapters" not in result.output
+
+
+def test_plan_asr_uses_configured_provider_identity(tmp_path: Path) -> None:
+    request = PrepareRequest(input="lecture.mp4", out_dir=tmp_path / "out")
+    resolved = resolve_config(request)
+    policy = resolved.transforms.asr.model_copy(
+        update={
+            "allow_upload": True,
+            "allow_paid": True,
+            "preferred_provider": "openai-whisper",
+            "model": "whisper-1",
+        }
+    )
+    environment = TransformEnvironment(
+        configured_asr=True,
+        configured_asr_provider_id="openai-whisper",
+        configured_asr_model_id="whisper-1",
+        configured_asr_cost_mode="paid",
+    )
+    source = SourceState(has_transcript=False, has_media=True)
+
+    plan = plan_asr(policy, environment, source)
+
+    assert plan.selected == "configured-online"
+    assert plan.provider_id == "openai-whisper"
+    assert plan.model_id == "whisper-1"
+    assert plan.evidence_seed.uploaded is True
+    assert plan.evidence_seed.cost_may_apply is True
+
+
+def test_plan_asr_rejects_paid_configured_provider_without_paid_policy(tmp_path: Path) -> None:
+    request = PrepareRequest(input="lecture.mp4", out_dir=tmp_path / "out")
+    resolved = resolve_config(request)
+    policy = resolved.transforms.asr.model_copy(
+        update={"allow_upload": True, "allow_paid": False, "preferred_provider": "paid-asr"}
+    )
+    environment = TransformEnvironment(
+        configured_asr=True,
+        configured_asr_provider_id="paid-asr",
+        configured_asr_cost_mode="paid",
+    )
+    source = SourceState(has_transcript=False, has_media=True)
+
+    plan = plan_asr(policy, environment, source)
+
+    assert plan.selected == "unavailable"
+    assert "paid ASR provider requires allow_paid=true" in plan.reason
 
 
 def test_visual_context_prefers_free_online_for_vlm_when_local_ocr_is_not_suitable(

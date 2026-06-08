@@ -83,19 +83,27 @@ TransformEnvironment
     online_ai: bool
   network_available: bool
   offline: bool
+  model_cache_root: Path
   configured_providers:
-    asr: ProviderConfig | None
-    ocr: ProviderConfig | None
-    vision: ProviderConfig | None
-    text: ProviderConfig | None
+    asr: dict[str, ProviderConfig]
+    ocr: dict[str, ProviderConfig]
+    vision: dict[str, ProviderConfig]
+    text: dict[str, ProviderConfig]
   free_online_registry:
     asr: RouteDescriptor | None
     ocr: RouteDescriptor | None
     vision: RouteDescriptor | None
     text: RouteDescriptor | None
+
+ProviderConfig
+  type: str
+  base_url: str
+  api_key_env: str | None
+  model: str | None
+  cost_mode: free | paid | local | unknown
 ```
 
-The registry is curated by the project. It is not a provider menu shown to normal users.
+The registry is curated by the project. It is not a provider menu shown to normal users. Provider credentials are read from environment variables only after a configured-online route is selected.
 
 ## Public module API set
 

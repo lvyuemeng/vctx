@@ -16,6 +16,7 @@ SelectedRoute = Literal[
 ]
 CapabilityName = Literal["asr", "visual_context", "cleanup", "chapters"]
 VisualNeed = Literal["none", "ocr", "description"]
+ProviderCostMode = Literal["free", "paid", "local", "unknown"]
 
 
 class TransformEvidence(BaseModel):
@@ -57,6 +58,9 @@ class TransformEnvironment(BaseModel):
     network_available: bool = True
     offline: bool = False
     configured_asr: bool = False
+    configured_asr_provider_id: str | None = None
+    configured_asr_model_id: str | None = None
+    configured_asr_cost_mode: ProviderCostMode = "unknown"
     configured_ocr: bool = False
     configured_vision: bool = False
     configured_text: bool = False
@@ -150,14 +154,27 @@ def plan_asr(
             uploaded=True,
         )
     if _online_allowed(policy, environment) and policy.allow_upload and environment.configured_asr:
+        if environment.configured_asr_cost_mode == "paid" and not policy.allow_paid:
+            return _plan(
+                capability="asr",
+                selected="unavailable",
+                reason="configured paid ASR provider requires allow_paid=true",
+                requirements=["set allow_paid=true or choose a free/local route"],
+                requires_user_config=True,
+            )
+        provider_id = (
+            environment.configured_asr_provider_id or policy.preferred_provider or "default-asr"
+        )
+        model_id = policy.model or environment.configured_asr_model_id
         return _plan(
             capability="asr",
             selected="configured-online",
-            provider_id="default-asr",
+            provider_id=provider_id,
+            model_id=model_id,
             reason="configured online ASR route available",
             requires_user_config=True,
             uploaded=True,
-            cost_may_apply=policy.allow_paid,
+            cost_may_apply=environment.configured_asr_cost_mode == "paid" or policy.allow_paid,
         )
     return _plan(
         capability="asr",

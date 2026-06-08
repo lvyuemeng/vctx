@@ -11,7 +11,7 @@ No dependency on provider libraries, file-writing internals, subtitle parsers, r
 
 ## API graph
 ```text
-prepare_command(INPUT, --out DIR, options)
+prepare_command(INPUT, --out DIR, --config PATH, options)
   -> build_prepare_request(args)
   -> app.prepare_context_pack(request)
   -> print result paths
@@ -42,6 +42,7 @@ cli -> direct artifact writing
 
 ## Verification
 - help output is readable
+- `--config` passes a TOML config path into `PrepareRequest` without CLI parsing provider internals
 - invalid args map to documented exit codes
 - stdout reports final result paths
 - stderr contains warnings/errors/progress
