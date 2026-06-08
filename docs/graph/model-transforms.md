@@ -1,421 +1,387 @@
-# vctx Model Transformation Stack
+# Model Transforms Module Graph
 
-This document turns the abstract internal-transformation architecture into concrete technology choices.
+## Purpose
+Run bounded model-mediated transformations behind the context-preparation workflow.
 
-It is intentionally opinionated: `vctx` should choose one curated default per capability instead of exposing a large provider/model menu.
+This module converts prepared source inputs into normalized records plus route/evidence metadata. It is not a chat layer, summarizer, RAG layer, or knowledge manager.
 
-## Product rule
-
-`vctx` may use models internally to transform source material into source-grounded records.
-
-It should not become the user-facing AI layer.
-
-Good internal transformations:
+Good transformations:
 
 ```text
-audio -> timestamped transcript
-frame -> OCR text
-frame -> visual description
-noisy transcript -> cleaned transcript
-transcript/chunks -> chapter candidates
+audio/media -> timestamped transcript
+frames -> OCR text records
+frames -> visual description records
+transcript -> safe cleanup records
+chunks -> chapter candidates
 ```
 
-Out of scope for `vctx` itself:
+## Dependencies
 
-```text
-chat
-Q&A
-final summary
-knowledge management
-cross-video memory
-RAG
-personal study assistant
-```
-
-External agents read `context.md`, `chunks.json`, `manifest.json`, and other artifacts to perform those user-facing reasoning tasks.
-
-## Module role
-
-This file is the `transforms` module graph plus concrete model stack.
+### Module dependency tree
 
 ```text
 app
   -> transforms
-      -> local model adapters
-      -> free zero-config online adapters
-      -> configured-online adapters
-      -> models / cache / manifest evidence
+      -> models
+      -> errors
+      -> io.cache/read-only-temp-assets
+      -> transform adapters
+          -> local_asr
+          -> local_ocr
+          -> free_online_asr/ocr/vlm/text
+          -> configured_online_asr/ocr/vlm/text
 ```
 
-`transforms` is atomic: it turns prepared source inputs into normalized source-grounded records plus evidence. It does not render, write final artifacts, or talk to users.
+`transforms` returns records and evidence. It does not render Markdown, write final artifacts, mutate app config, or import `app`.
 
-## Selection policy
+### Default install dependencies
 
-For each capability, choose one curated default route. Avoid exposing provider/model menus.
-
-Default route order:
+No heavy model dependency is required for default install.
 
 ```text
-1. Deterministic source data
-   - official subtitles
-   - automatic platform subtitles
-   - user-provided transcript
-
-2. Best practical zero-config route
-   - local when efficient and quality is good enough
-   - free zero-config online when quality is better and the service is stable/safe enough
-
-3. Default configured-online route
-   - used when zero-config quality is not enough and project/user config exists
-   - may require credentials
-   - may upload media/text
-   - must be manifest-recorded
-
-4. External-command route
-   - developer escape hatch only
-   - not primary UX
+pydantic        # shared models
+httpx           # only in online extra / adapter layer
+faster-whisper  # optional asr extra
+rapidocr-onnxruntime # optional ocr extra
+pillow          # optional visual/frame utility
+opencv-python-headless # optional only if frame processing needs it
 ```
 
-Important correction: locality is not the main goal. For high-information-throughput visual tasks, a weak local model can be worse than a free or configured online model. The preferred route is the best practical default route with the least user configuration.
+Provider-specific SDKs are not default dependencies. Use plain HTTP adapters unless an SDK is truly required.
 
-## Capability stack summary
+## Config input contract
 
-| Capability | Default behavior | Curated local route | Free zero-config online route | Configured-online route | Why |
-| --- | --- | --- | --- | --- | --- |
-| URL metadata/subtitles | always deterministic first | `yt-dlp` Python package | none needed | none | No model needed if subtitles exist. |
-| ASR | auto-adapt when transcript is missing and transcription is allowed by default policy | `faster-whisper` via optional `asr` extra | use if stable/no-auth/no-cost and better for the input | curated audio transcription API adapter | Solves no-transcript case. Local is often good enough, but not always fastest/best. |
-| OCR | auto-adapt when visual text is likely useful | `rapidocr-onnxruntime` via optional `ocr` extra | use if stable and higher-quality than local | curated vision/OCR API adapter | Slide/code text can be important; local OCR is often acceptable. |
-| Frame description | auto-adapt toward best visual route; online often wins | no default local VLM yet | preferred if stable/no-auth/no-cost and useful | curated lightweight VLM API adapter | Visual understanding is high-throughput; local small VLMs may be too weak. |
-| Transcript cleanup | deterministic cleanup by default; model cleanup only when useful/safe | no default local LLM yet | acceptable for punctuation/format cleanup if stable | curated text model adapter | Cleanup must not silently rewrite meaning. |
-| Chapter suggestion | deterministic/time-based candidates first; model route when useful | no default local LLM yet | acceptable for rough candidates if stable | curated text model adapter | Produces candidates, not a summary. |
-| Language detection | lightweight local/default heuristic | small local heuristic/library | rarely needed | rarely needed | Should not become a general LLM call. |
-
-## Default runtime dependencies
-
-The default install should stay small and deterministic:
+Transform APIs receive resolved policy from `app`. They do not read user config files directly.
 
 ```text
-typer
-pydantic
-yt-dlp
-platformdirs
-webvtt-py
-srt
+CapabilityPolicy
+  enabled: auto | true | false
+  route: default | auto | disabled | explicit
+  allow_network: bool
+  allow_upload: bool
+  allow_paid: bool
+  preferred_provider: str | None   # advanced/debug only
+  model: str | None                # advanced/debug only
 ```
 
-Default `vctx prepare` should use:
+Missing fields are already resolved by `app` before this module is called:
 
 ```text
-URL/local input
-  -> metadata/subtitle/transcript acquisition
-  -> parsing
-  -> deterministic cleanup
-  -> chunking
-  -> artifacts
+missing -> default/auto
+missing configured provider -> configured-online unavailable
+missing local extra -> local route unavailable
+missing free-online registry entry -> free-online unavailable
 ```
 
-No ASR, OCR, VLM, cloud SDK, or large model package should be required by the default path.
-
-## Optional extras
-
-### `asr` extra
-
-Purpose:
+## Environment input contract
 
 ```text
-audio/media -> timestamped transcript
+TransformEnvironment
+  installed_extras:
+    asr: bool
+    ocr: bool
+    online_ai: bool
+  network_available: bool
+  offline: bool
+  configured_providers:
+    asr: ProviderConfig | None
+    ocr: ProviderConfig | None
+    vision: ProviderConfig | None
+    text: ProviderConfig | None
+  free_online_registry:
+    asr: RouteDescriptor | None
+    ocr: RouteDescriptor | None
+    vision: RouteDescriptor | None
+    text: RouteDescriptor | None
 ```
 
-Candidate stack:
+The registry is curated by the project. It is not a provider menu shown to normal users.
+
+## Public module API set
+
+### Planning APIs
+
+Planning is pure: no model call, no network call, no media upload.
 
 ```text
-faster-whisper
-av or ffmpeg integration for audio handling when needed
+plan_asr(policy, environment, source_state) -> RoutePlan
+plan_visual_context(policy, environment, source_state) -> RoutePlan
+plan_cleanup(policy, environment, transcript) -> RoutePlan
+plan_chapters(policy, environment, chunks) -> RoutePlan
 ```
-
-Route:
 
 ```text
-prepare INPUT
-  -> if subtitles are missing and transcript fallback is allowed
-  -> download/extract audio if needed
-  -> run default ASR route:
-       1. faster-whisper when installed and suitable
-       2. free zero-config online ASR when stable/better and allowed by policy
-       3. configured-online ASR when configured
-  -> produce transcript.raw.json
-  -> normalize/chunk/render
+RoutePlan
+  capability: asr | visual_context | cleanup | chapters
+  selected: skipped | deterministic | local | free-online | configured-online | unavailable
+  provider_id: str | None
+  model_id: str | None
+  reason: str
+  requirements: list[str]
+  warnings: list[str]
+  evidence_seed: TransformEvidence
 ```
 
-Recommended model policy:
+### Execution APIs
+
+Execution APIs perform the bounded transformation selected by a plan.
 
 ```text
-small/base for default CPU-friendly behavior
-medium/large only through advanced config later, not normal CLI choice
+run_asr(plan, media_asset, cache) -> TransformResult[TranscriptPayload]
+run_visual_context(plan, frame_assets, cache) -> TransformResult[list[VisualRecord]]
+run_cleanup(plan, transcript, cache) -> TransformResult[Transcript]
+run_chapters(plan, chunks, cache) -> TransformResult[list[ChapterCandidate]]
 ```
-
-Why:
 
 ```text
-free
-local
-good enough for many videos
-common and maintained
-no provider account
+TransformResult[T]
+  value: T
+  evidence: TransformEvidence
+  warnings: list[str]
+  artifacts: list[ArtifactRef]
 ```
 
-Caveat:
+### Adapter APIs
+
+Adapters are leaf implementations.
 
 ```text
-Local ASR may be slow or lower quality for noisy audio, multilingual speech, or poor hardware.
+AsrAdapter.transcribe(media_asset, options) -> TranscriptPayload
+VisualAdapter.describe_or_ocr(frame_assets, options) -> list[VisualRecord]
+CleanupAdapter.clean(transcript, options) -> Transcript
+ChapterAdapter.suggest(chunks, options) -> list[ChapterCandidate]
 ```
 
-If local ASR is not good enough, the default route should adapt to the configured/free online route rather than exposing a menu of ASR providers.
+All adapters must convert provider-specific payloads to internal models before returning.
 
-### `ocr` extra
-
-Purpose:
+## Route-selection algorithm
 
 ```text
-sampled frames -> timestamped visual text records
+route_capability(policy, environment, inputs):
+  if policy.enabled is false or policy.route is disabled:
+    return skipped
+
+  if capability already has deterministic source data:
+    return deterministic/skipped
+
+  candidates = []
+
+  if local extra installed and local route is suitable for input:
+    candidates.append(local)
+
+  if not environment.offline
+     and policy.allow_network
+     and free-online route exists
+     and route is stable/safe for this input:
+    candidates.append(free-online)
+
+  if policy.allow_network
+     and policy.allow_upload
+     and configured provider exists
+     and provider is suitable:
+    candidates.append(configured-online)
+
+  return best candidate by capability-specific ranking
+  or unavailable with actionable reason
 ```
 
-Candidate stack:
+Capability-specific ranking may prefer online for high-throughput visual cases:
 
 ```text
-rapidocr-onnxruntime
-pillow
-opencv-python-headless, only if frame/image processing needs it
+ASR: deterministic subtitle > local faster-whisper if good enough > free-online if better/stable > configured-online
+OCR text: local OCR if clear text > free-online/configured vision when local OCR likely weak
+Frame description/VLM: free-online/configured-online often before local; no weak local VLM default
+Cleanup: deterministic cleanup > safe free-online/configured cleanup only if it preserves meaning
+Chapters: deterministic candidates > safe model candidates when useful
 ```
 
-Route:
+## Capability API graphs
+
+### ASR
 
 ```text
-prepare INPUT
-  -> if visual context is enabled or auto-detected as useful
-  -> sample frames
-  -> run default visual-text route:
-       1. local OCR when suitable
-       2. free zero-config OCR/VLM when better and allowed by policy
-       3. configured-online vision/OCR when configured
-  -> visual_records.json
-  -> include visual text in readable/context artifacts
+plan_asr(policy, environment, source_state)
+  -> if transcript exists: skipped(reason="transcript already available")
+  -> if media unavailable: unavailable(requirement="media asset")
+  -> candidate local_asr if faster-whisper installed
+  -> candidate free_online_asr if registry route exists and not offline
+  -> candidate configured_online_asr if provider config exists
+  -> RoutePlan
+
+run_asr(plan, media_asset, cache)
+  -> selected adapter transcribes audio/media
+  -> adapter returns TranscriptPayload
+  -> evidence records provider/model/upload/cost
 ```
 
-Why:
+Concrete default stack:
 
 ```text
-free
-local
-reasonable for slide text and screen recordings
-lighter than many full OCR frameworks
+local adapter: faster-whisper
+local default model: small/base, selected by project default and hardware policy
+configured-online adapter: plain HTTP audio transcription adapter
+free-online adapter: only if project registry contains stable no-auth/no-cost route
 ```
 
-Caveat:
+### Visual context
 
 ```text
-OCR quality may be poor on tiny text, stylized slides, fast motion, handwriting, dense UI screenshots, and multilingual content.
+plan_visual_context(policy, environment, source_state)
+  -> if visual disabled: skipped
+  -> if frames/media unavailable: unavailable or skipped optional
+  -> detect whether OCR-only or frame-description is useful
+  -> candidate local_ocr if rapidocr installed and likely good enough
+  -> candidate free_online_vision if registry route exists and better for input
+  -> candidate configured_online_vision if provider config exists
+  -> RoutePlan
+
+run_visual_context(plan, frame_assets, cache)
+  -> selected adapter performs OCR and/or visual description
+  -> returns VisualRecord[]
+  -> evidence labels generated descriptions vs source text
 ```
 
-If local OCR quality is not good enough, the default visual route should adapt to a better free/configured online route when policy allows it.
-
-### `online-ai` extra
-
-Purpose:
+Concrete default stack:
 
 ```text
-configured-online model transformations
+local OCR adapter: rapidocr-onnxruntime
+frame utilities: pillow; opencv-python-headless only when needed
+local VLM adapter: none by default
+free-online VLM/OCR: preferred when stable and materially better
+configured-online VLM/OCR: plain HTTP adapter when configured
 ```
 
-Candidate stack:
+### Cleanup
 
 ```text
-httpx
+plan_cleanup(policy, environment, transcript)
+  -> deterministic cleanup already handled by transcript module
+  -> if model cleanup unsafe/not useful: skipped
+  -> candidate free_online_text if stable and safe
+  -> candidate configured_online_text if configured
+  -> RoutePlan
+
+run_cleanup(plan, transcript, cache)
+  -> selected adapter improves punctuation/format only
+  -> preserves timestamps/segment ids when practical
+  -> returns Transcript
 ```
 
-Avoid provider SDKs as default. Add a provider-specific SDK only if plain HTTP is insufficient.
+No default local LLM route yet. Do not silently rewrite meaning.
 
-Configured-online routes are selected by default routing when the project/user configuration exists and the zero-config route is not good enough for the capability.
-
-Rules:
+### Chapters
 
 ```text
-must be explicit
-must record provider/model in manifest
-must record whether media/text was uploaded
-must record warnings about cost/privacy when applicable
-must not be required for default prepare
+plan_chapters(policy, environment, chunks)
+  -> deterministic boundary candidates first
+  -> if model candidates useful: choose free-online/configured text route when available
+  -> RoutePlan
+
+run_chapters(plan, chunks, cache)
+  -> selected adapter returns ChapterCandidate[]
+  -> candidates include evidence chunk/segment ids
 ```
 
-### Free zero-config online routes
+Chapter output is structure, not final summary.
 
-A free zero-config online route is preferred over local when:
+## Transform evidence
+
+Every executed or skipped route returns evidence for the manifest.
 
 ```text
-- it requires no user API key or account
-- it is stable enough for CLI use
-- it has acceptable rate limits
-- it gives materially better quality than the local route
-- network/upload behavior is acceptable for the default policy
-- the manifest records that online processing occurred
+TransformEvidence
+  capability
+  selected_route: skipped | deterministic | local | free-online | configured-online | unavailable
+  provider_id
+  model_id
+  requires_user_config
+  uploaded
+  cost_may_apply
+  deterministic
+  source_artifacts
+  output_artifacts
+  reason
+  warnings
 ```
 
-Because free public endpoints can disappear, throttle, or change behavior, they must be treated as discoverable curated routes, not hard assumptions. `--offline` or equivalent config should disable them.
-
-## Capability API graph
-
-### ASR graph
-
-```text
-prepare INPUT
-  -> acquire metadata
-  -> try subtitles
-       -> if subtitles found: skip ASR
-       -> if subtitles missing: continue
-  -> route_default_asr(policy, environment, media)
-       -> deterministic unavailable
-       -> best zero-config route: local faster-whisper or free-online if better/available
-       -> configured-online route when configured and needed
-       -> unavailable: partial/fail with clear manifest
-  -> transcript.raw.json
-  -> transcript.clean.json
-  -> chunks.json
-  -> context.md/readable.md
-  -> manifest step: transform.asr
-```
-
-### Visual context graph
-
-```text
-prepare INPUT
-  -> acquire media/frame capability
-  -> sample frames using deterministic policy
-       -> time interval
-       -> scene/keyframe later if needed
-  -> route_default_visual(policy, environment, frames)
-       -> skip when visual context is not useful or not supported
-       -> local OCR for visual text when good enough
-       -> free-online OCR/VLM when better/available
-       -> configured-online vision route when configured and needed
-  -> visual_records.json
-  -> optional visual sections in readable.md/context.md
-  -> manifest step: transform.visual_context
-```
-
-Visual model note:
-
-```text
-For frame description and dense visual understanding, online is often the better route.
-Do not over-prioritize local if the local model is too weak or too slow.
-```
-
-### Cleanup graph
-
-```text
-prepare INPUT
-  -> parse transcript
-  -> deterministic cleanup
-  -> route_default_cleanup(policy, transcript)
-       -> deterministic cleanup only when model cleanup is not useful/safe
-       -> free zero-config cleanup when stable and safe
-       -> configured-online cleanup when configured and needed
-  -> transcript.clean.json
-  -> manifest step: transform.cleanup
-```
-
-Cleanup constraints:
-
-```text
-preserve timestamps
-preserve segment ids when practical
-avoid semantic rewriting
-record model-mediated cleanup
-```
-
-### Chapter graph
-
-```text
-prepare INPUT
-  -> chunks/transcript
-  -> deterministic boundary candidates
-  -> route_default_chapters(policy, chunks)
-       -> deterministic candidates when good enough
-       -> free zero-config model candidates when useful/stable
-       -> configured-online candidates when configured and needed
-  -> chapter_candidates.json
-  -> manifest step: transform.chapters
-```
-
-Chapter output is structural metadata, not final summarization.
-
-## Manifest transform evidence
-
-Every model route must write evidence like:
+Example configured-online visual evidence:
 
 ```json
 {
-  "name": "transform.visual_context",
-  "status": "ok",
-  "provider": "configured-online",
-  "provider_name": "curated-vision-provider",
-  "model": "configured-vision-model",
-  "mode": "online",
-  "source_artifacts": ["frames/frame_001.jpg"],
-  "output_artifacts": ["visual_records.json"],
+  "capability": "visual_context",
+  "selected_route": "configured-online",
+  "provider_id": "default-vision",
+  "model_id": "configured-vision-model",
+  "requires_user_config": true,
   "uploaded": true,
   "cost_may_apply": true,
   "deterministic": false,
-  "warnings": [
-    "Visual descriptions are generated model output, not source text."
-  ]
+  "source_artifacts": ["frames/frame_001.jpg"],
+  "output_artifacts": ["visual_records.json"],
+  "warnings": ["Visual descriptions are generated model output, not source text."]
 }
 ```
 
-For free zero-config online:
+Example missing provider evidence:
 
 ```json
 {
-  "name": "transform.ocr",
-  "status": "ok",
-  "provider": "free-online",
-  "provider_name": "curated-free-ocr-service",
-  "mode": "auto",
-  "uploaded": true,
-  "cost_may_apply": false,
-  "requires_user_config": false
-}
-```
-
-For local:
-
-```json
-{
-  "name": "transform.asr",
-  "status": "ok",
-  "provider": "local",
-  "provider_name": "faster-whisper",
-  "model": "small",
-  "mode": "local",
+  "capability": "asr",
+  "selected_route": "unavailable",
+  "reason": "No transcript found, ASR extra not installed, no free-online ASR route registered, and no configured ASR provider.",
+  "requires_user_config": false,
   "uploaded": false,
-  "cost_may_apply": false,
-  "requires_user_config": false
+  "cost_may_apply": false
 }
 ```
 
-## Implementation recommendation
+## Atomic isolation
 
-Build in this order:
+Transforms own:
 
 ```text
-1. URL metadata/subtitles through yt-dlp
-2. no-transcript partial manifest
-3. local ASR with faster-whisper optional extra
-4. visual frame sampling + local OCR
-5. configured-online VLM/OCR for visual high-throughput cases
-6. free zero-config online registry if a stable route is identified
-7. model cleanup/chapter candidates
+route planning per capability
+adapter invocation
+provider payload normalization
+model-route evidence
 ```
 
-Do not block URL/subtitle work on model-provider decisions.
+Transforms do not own:
 
-The first model transformation to implement should be ASR because it directly solves the no-transcript failure case.
+```text
+reading config files
+workflow orchestration
+source acquisition
+subtitle parsing
+chunk rendering
+final artifact writing
+user-facing summarization
+```
+
+## Tree dependency rule
+
+Allowed:
+
+```text
+app -> transforms -> adapters -> provider libraries / HTTP
+transforms -> models/errors/cache abstractions
+```
+
+Forbidden:
+
+```text
+transforms -> app
+transforms -> render
+transforms -> final artifact writer
+transforms -> CLI
+transforms -> source acquisition orchestration
+```
+
+## Verification
+
+- planning tests cover missing config, missing extras, offline mode, missing provider, and optional skip
+- execution tests use fake adapters where possible
+- provider payloads are normalized before leaving adapters
+- every execution result includes `TransformEvidence`
+- visual descriptions are labeled as generated model output
+- no provider/model menu is required for the normal CLI path
