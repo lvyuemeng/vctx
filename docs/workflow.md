@@ -651,6 +651,125 @@ GPU default: small or medium when available
 
 No external command adapter should be the primary UX. Shelling to `ffmpeg` is acceptable for media conversion because it is an infrastructure tool, not the ASR provider UX.
 
+### Online ASR route policy
+
+Do not invent or silently depend on a public online ASR service.
+
+`free-online` means a project-shipped registry entry that has all of these properties:
+
+```text
+- no user account required
+- no API key required
+- no payment required
+- license/terms allow this use
+- stable enough for automated fallback
+- explicit upload disclosure in manifest
+- deterministic request/response adapter tested with fixtures
+```
+
+If no such registry entry exists, `free-online` is simply unavailable and the planner should not select it. The first Level 4 implementation should therefore ship with:
+
+```text
+free_online_registry.asr = None
+```
+
+and prefer local ASR.
+
+Configured online ASR is different: the user explicitly provides a provider config. A future project config should be shaped like this:
+
+```toml
+[transforms.asr]
+enabled = "auto"
+route = "auto"              # auto | local | configured-online | disabled
+allow_network = true
+allow_upload = true
+allow_paid = false
+preferred_provider = "openai-whisper" # optional advanced override
+model = "whisper-1"                  # optional advanced override
+
+[providers.asr.openai-whisper]
+type = "openai-compatible-audio"
+base_url = "https://api.openai.com/v1/audio/transcriptions"
+api_key_env = "OPENAI_API_KEY"
+model = "whisper-1"
+cost_mode = "paid"
+```
+
+Rules:
+
+```text
+- `configured-online` is never selected when `allow_upload=false`.
+- Paid providers require both configured credentials and `allow_paid=true`.
+- API keys are referenced by environment variable name, not stored in config.
+- Normal users should not need provider flags; config is an advanced escape hatch.
+```
+
+### Local ASR model storage
+
+For `faster-whisper`, model files should be stored under the normal vctx cache root, not inside output packs:
+
+```text
+<cache-root>/models/faster-whisper/<model-id>/
+```
+
+Default cache root:
+
+```text
+platformdirs.user_cache_dir("vctx")
+```
+
+Request override:
+
+```bash
+vctx prepare input.mp4 --out out --cache-dir ./.cache/vctx
+```
+
+Artifact output remains separate:
+
+```text
+out/                 # manifest/transcript/chunks/rendered artifacts
+cache/models/...     # reusable ASR model weights
+cache/media/...      # temporary/downloaded media assets
+```
+
+The manifest should record the model id and cache location class, but not dump large model paths unless useful for debugging.
+
+### Local ASR model auto-selection
+
+Auto-selection should be conservative and deterministic. It should inspect local capability before downloading a model:
+
+```text
+1. Detect CUDA availability through faster-whisper/CTranslate2 if installed.
+2. Detect available RAM and, when CUDA exists, available VRAM.
+3. Inspect media duration.
+4. Choose the smallest model expected to be useful and finish reliably.
+5. Reuse an already cached suitable model when possible.
+6. Never download multiple candidate models just to benchmark.
+```
+
+Initial policy:
+
+```text
+if CUDA VRAM >= 8 GB:      small, compute_type=float16
+elif CUDA VRAM >= 4 GB:    base, compute_type=float16
+elif system RAM >= 8 GB:   base, compute_type=int8
+else:                      tiny, compute_type=int8
+```
+
+Duration adjustment:
+
+```text
+if duration > 2 hours and CPU-only: prefer tiny/base int8 and warn about runtime
+if duration < 10 minutes and RAM is sufficient: base is acceptable
+```
+
+Model download timing:
+
+```text
+plan_asr(): never downloads
+run_asr(): downloads selected model on first use through faster-whisper/HuggingFace cache into vctx cache
+```
+
 ### How Level 4 should work end-to-end
 
 ```text
