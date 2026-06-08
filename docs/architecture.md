@@ -2,683 +2,418 @@
 
 ## Purpose
 
-This document turns the project abstractions into a concrete initial module layout, data flow, and pseudocode for `vctx`.
+This document describes the architecture of `vctx` at the abstraction level.
 
-The layout is concrete enough to implement, but the architectural rule remains: external integrations stay at the edges, internal models stay uniform, and pure transformations stay separate from side effects.
+It intentionally avoids concrete module names, function signatures, and implementation pseudocode. Those belong in [`docs/graph.md`](graph.md). This document answers a different question:
 
-## System overview
+> What abstract behaviors must the system have, and how should those behaviors cooperate without becoming a monolith?
 
-`vctx` is a CLI pipeline:
+`vctx` should be understood as a context compiler for video-like sources. It acquires source-grounded material, converts it into a uniform internal representation, optionally applies bounded transformations, and emits inspectable artifacts for humans and external AI agents.
 
-```text
-User / agent
-  -> CLI command
-  -> application use case
-  -> source adapter
-  -> internal metadata + transcript models
-  -> transcript normalization
-  -> chunking
-  -> rendering
-  -> artifact writing
-  -> manifest + stdout result
-```
+## General view
 
-The output directory is the integration boundary for downstream agents.
-
-## Concrete module layout
-
-Initial package layout:
+The system is a one-shot CLI pipeline:
 
 ```text
-src/vctx/
-  __init__.py
-  __main__.py
-  cli.py
-
-  app/
-    __init__.py
-    prepare.py
-    errors.py
-    result.py
-
-  models/
-    __init__.py
-    common.py
-    metadata.py
-    transcript.py
-    chunks.py
-    artifacts.py
-    manifest.py
-
-  sources/
-    __init__.py
-    base.py
-    detect.py
-    ytdlp_source.py
-    local_file_source.py
-
-  subtitles/
-    __init__.py
-    parse.py
-    webvtt_parser.py
-    srt_parser.py
-
-  transcript/
-    __init__.py
-    normalize.py
-    clean_text.py
-
-  chunking/
-    __init__.py
-    chunker.py
-    tokens.py
-
-  render/
-    __init__.py
-    context_md.py
-    readable_md.py
-    transcript_md.py
-
-  io/
-    __init__.py
-    cache.py
-    writer.py
-    json_dump.py
-
-  util/
-    __init__.py
-    timefmt.py
-    paths.py
-    versions.py
+caller intent
+  -> source acquisition
+  -> source-grounded representation
+  -> optional bounded transformations
+  -> deterministic preparation
+  -> artifact rendering
+  -> manifest-backed verification
 ```
 
-Keep this layout boring. Do not add `services`, `managers`, or framework-style layers unless a real need appears.
+The output directory is the integration boundary. Downstream agents should not need to know which provider, subtitle format, ASR model, or cleanup route produced the artifacts. They should inspect the manifest and consume the generated Markdown/JSON.
 
-## Dependency use by stage
+## Architectural principles
 
-| Stage | Modules | Dependencies | Side effects? | Output |
-| --- | --- | --- | --- | --- |
-| CLI parsing | `cli.py` | `typer`, optionally `rich` via Typer standard extras | stdout/stderr only | `PrepareOptions` / command invocation |
-| Use-case orchestration | `app/prepare.py` | standard library, internal models | coordinates side effects | `PrepareResult` |
-| Source detection | `sources/detect.py` | standard library URL/path checks | no, except path existence checks | `SourceAdapter` |
-| URL metadata/subtitles | `sources/ytdlp_source.py` | `yt-dlp` Python API | network / extractor calls | `VideoMetadata`, raw subtitle files or text |
-| Local file input | `sources/local_file_source.py` | standard library | file reads | metadata or imported transcript |
-| Subtitle parsing | `subtitles/*` | `webvtt-py`, `srt` | no once text/file is available | `RawTranscript` |
-| Normalization | `transcript/*` | standard library, `pydantic` models | no | `CleanTranscript` |
-| Chunking | `chunking/*` | standard library | no | `ChunkSet` |
-| Rendering | `render/*` | standard library | no | Markdown strings / serializable JSON |
-| Artifact writing | `io/writer.py` | standard library | filesystem writes | files in `--out` |
-| Cache paths | `io/cache.py`, `util/paths.py` | `platformdirs` | creates/uses cache dirs when needed | cache paths |
-| Manifest | `models/manifest.py`, `io/json_dump.py` | `pydantic`, standard JSON | no until writer writes | `manifest.json` |
+### Context preparation, not conversation
 
-## User interaction model
+`vctx` prepares context. It does not own the conversation with the user.
 
-`vctx` is non-interactive by default.
+External AI agents are responsible for:
 
-Primary command:
+- asking the user what they want
+- deciding whether to summarize, compare, teach, or ask follow-up questions
+- producing final knowledge-flow explanations
+- maintaining memory or cross-video knowledge systems
 
-```bash
-vctx prepare URL_OR_PATH --out DIR
-```
+`vctx` is responsible for:
 
-Expected user-visible behavior:
+- acquiring metadata, transcript, audio-derived text, visual text, or other source-grounded material
+- preserving provenance and timestamps where possible
+- producing durable artifacts
+- explaining what happened through a manifest
 
-1. Parse options.
-2. Fail early if input is empty or output policy is invalid.
-3. Print concise progress to stderr or terminal progress UI.
-4. Write artifacts to `--out`.
-5. Print final artifact paths to stdout.
-6. Return exit code `0` on success.
+### Uniform internal representation
 
-Example stdout:
+External sources differ. The architecture should hide those differences behind normalized internal concepts.
+
+Examples of external shapes:
 
 ```text
-Wrote context pack: ./out/video-001
-Manifest: ./out/video-001/manifest.json
-Context: ./out/video-001/context.md
-Readable: ./out/video-001/readable.md
+subtitle track
+manual transcript file
+auto-generated captions
+ASR segments
+OCR text from frames
+VLM frame descriptions
+AI-cleaned transcript segments
 ```
 
-Warnings go to stderr and into the manifest:
+All should converge into source-grounded internal records before deterministic preparation and rendering.
+
+The architecture should prevent provider-specific payloads from leaking into chunking, rendering, manifest generation, or user-facing artifacts.
+
+### Side effects at the edges
+
+Side effects are allowed, but they must stay at architectural boundaries.
+
+Side-effecting behaviors include:
+
+- network extraction
+- local file reads and writes
+- cache creation
+- media download
+- audio extraction
+- ASR/OCR/VLM calls
+- external process execution
+- online provider API calls
+
+Core preparation behaviors should operate on data already acquired by edge behaviors.
+
+This separation makes the tool easy to test, easier to inspect, and less likely to become spaghetti.
+
+### Deterministic by default
+
+The default path should be deterministic whenever practical.
+
+Examples:
+
+- parse known subtitle formats
+- normalize obvious subtitle markup
+- preserve and sort timestamps
+- chunk by explicit budgets
+- render known artifact formats
+- write a manifest describing the run
+
+Non-deterministic or model-mediated behavior is allowed only as a bounded transformation that is visible in the manifest.
+
+### Explicit optional AI
+
+The boundary is not "no AI." The boundary is:
 
 ```text
-warning: official subtitles not found; used automatic subtitles
+no embedded AI user interface inside vctx
 ```
 
-Errors should be actionable:
+Internal AI transformations are acceptable when they are bounded and source-preparation-oriented, for example:
+
+- audio transcription
+- OCR
+- frame description
+- language detection
+- transcript cleanup
+- speaker-label cleanup
+- chapter-boundary suggestion
+- provider routing
+
+These transformations must be:
+
+- explicit through command options or configuration
+- replaceable through adapters
+- recorded in the manifest
+- traceable back to source material when practical
+- optional rather than required for the default path
+
+`vctx` may call local models, online APIs, or external tools, but those calls are implementation details behind transformation adapters. The user interface remains CLI commands and artifact files, not chat.
+
+## Abstract behavior map
+
+### 1. Intent capture
+
+The caller provides a command, input, and options.
+
+The intent layer should answer:
+
+- What source should be processed?
+- Where should durable output be written?
+- Which capabilities are allowed?
+- Are optional AI transformations permitted?
+- What failure mode is preferred: fail, partial output, or fallback?
+
+This layer should not perform provider-specific work. It only turns command-line intent into a structured request.
+
+### 2. Source acquisition
+
+Source acquisition converts user input into source-grounded raw material.
+
+Possible acquisition behaviors:
 
 ```text
-error: no transcript found for URL; rerun with --asr local after installing the asr extra
+URL -> metadata
+URL -> subtitle track
+URL -> audio/video asset
+local transcript -> transcript payload
+local media -> media asset
 ```
 
-No command should ask the user questions during normal operation. If a decision is required, expose it as a flag.
+The acquisition layer owns interaction with external providers and local files. It should produce normalized metadata and raw payloads, not final Markdown.
 
-## Command-level data flow
+### 3. Capability routing
 
-### `vctx prepare`
+Capability routing decides which preparation path is allowed and available.
 
-Input:
+Examples:
 
 ```text
-URL_OR_PATH
---out DIR
---language LANG?              # optional preferred subtitle language
---overwrite / --no-overwrite  # default no-overwrite
---chunk-max-chars INT         # default deterministic chunking
---chunk-max-seconds INT?      # optional duration cap
---cache-dir DIR?              # optional override
---keep-temp                   # optional; default false
---format context,readable,transcript,json
+subtitles available -> use subtitles
+subtitles unavailable + ASR disabled -> partial manifest or clear failure
+subtitles unavailable + ASR enabled -> acquire audio and transcribe
+visual enrichment requested -> sample frames and run visual transformation
+cleanup requested -> apply transcript cleanup transformation
 ```
 
-Output directory:
+Routing must be policy-driven, not hidden magic. If a route uses AI, expensive downloads, or online services, that route must be allowed explicitly and recorded.
+
+### 4. Internal transformation
+
+A transformation converts one source-grounded representation into another.
+
+Examples:
 
 ```text
-DIR/
-  manifest.json
-  metadata.json
-  transcript.raw.json
-  transcript.clean.json
-  transcript.md
-  chunks.json
-  context.md
-  readable.md
+audio asset -> timestamped transcript
+frame image -> timestamped visual note
+raw transcript -> cleaned transcript
+raw transcript -> suggested chapter boundaries
+mixed source records -> ordered context records
 ```
 
-Pipeline:
+Transformations can be deterministic or AI-mediated.
+
+All transformations should preserve provenance:
+
+- source input
+- provider/tool/model, when applicable
+- timestamps, when available
+- confidence or warning information, when meaningful
+- whether content is source text, machine transcript, OCR text, or generated description
+
+### 5. Normalization
+
+Normalization converts acquired/transformed material into stable internal records.
+
+The architecture should separate normalization from semantic rewriting.
+
+Acceptable normalization:
+
+- strip subtitle markup
+- normalize whitespace
+- sort by timestamp
+- remove empty segments
+- assign stable ids
+- merge obviously duplicated caption fragments
+
+Semantic rewriting is a bounded transformation, not basic normalization, and must be labeled accordingly.
+
+### 6. Chunking
+
+Chunking prepares normalized records for context injection.
+
+The chunking behavior should preserve traceability:
 
 ```text
-PrepareRequest
-  -> select SourceAdapter
-  -> extract metadata
-  -> extract transcript/subtitles
-  -> parse subtitle format into RawTranscript
-  -> normalize transcript into CleanTranscript
-  -> chunk clean transcript into ChunkSet
-  -> render artifacts
-  -> write artifacts
-  -> write manifest
-  -> return PrepareResult
+chunk -> source record ids -> timestamps -> provenance
 ```
 
-Pseudocode:
+Default chunking should use simple deterministic budgets. Model-specific tokenization can be optional later but should not shape the core architecture.
 
-```python
-def prepare(request: PrepareRequest) -> PrepareResult:
-    run = ManifestBuilder.start(request)
+### 7. Rendering
 
-    out_dir = validate_output_dir(request.out_dir, overwrite=request.overwrite)
-    cache = Cache.from_options(request.cache_dir)
+Rendering converts internal records into artifacts.
 
-    adapter = detect_source(request.input)
-    run.step("source.detect", status="ok", detail=adapter.name)
-
-    metadata = adapter.extract_metadata(request.input)
-    run.step("metadata.extract", status="ok")
-
-    transcript_payload = adapter.extract_transcript(
-        request.input,
-        preferred_language=request.language,
-        cache=cache,
-    )
-    run.step(
-        "transcript.extract",
-        status="ok",
-        detail=transcript_payload.provenance,
-    )
-
-    raw_transcript = parse_transcript_payload(transcript_payload)
-    clean_transcript = normalize_transcript(raw_transcript)
-
-    chunks = chunk_transcript(
-        clean_transcript,
-        max_chars=request.chunk_max_chars,
-        max_seconds=request.chunk_max_seconds,
-    )
-
-    artifacts = build_artifacts(
-        metadata=metadata,
-        raw_transcript=raw_transcript,
-        clean_transcript=clean_transcript,
-        chunks=chunks,
-        manifest=run.preview(),
-        formats=request.formats,
-    )
-
-    written = write_artifacts(out_dir, artifacts)
-    manifest = run.finish(status="ok", artifacts=written)
-    write_manifest(out_dir, manifest)
-
-    return PrepareResult(out_dir=out_dir, manifest=manifest, artifacts=written)
-```
-
-## Internal models
-
-Use Pydantic v2 models for internal boundaries and artifact serialization.
-
-### Common primitives
-
-```python
-class TimeRange(BaseModel):
-    start: float
-    end: float | None = None
-
-class SourceRef(BaseModel):
-    kind: Literal["url", "file"]
-    value: str
-```
-
-### Metadata
-
-```python
-class VideoMetadata(BaseModel):
-    id: str
-    source_type: str
-    source: SourceRef
-    title: str | None = None
-    uploader: str | None = None
-    duration_seconds: float | None = None
-    webpage_url: str | None = None
-    language: str | None = None
-    extractor: str | None = None
-    raw_provider: str | None = None
-```
-
-Artifact: `metadata.json`.
-
-### Transcript
-
-```python
-class TranscriptSegment(BaseModel):
-    id: str
-    start: float
-    end: float | None = None
-    text: str
-    source_id: str | None = None
-
-class TranscriptProvenance(BaseModel):
-    method: Literal["official_subtitles", "automatic_subtitles", "local_file", "asr"]
-    language: str | None = None
-    format: Literal["vtt", "srt", "json", "plain", "unknown"] = "unknown"
-    provider: str | None = None
-
-class Transcript(BaseModel):
-    video_id: str
-    provenance: TranscriptProvenance
-    segments: list[TranscriptSegment]
-```
-
-Artifacts:
+The renderer should support at least two audiences:
 
 ```text
-transcript.raw.json
-transcript.clean.json
-transcript.md
+human-readable Markdown
+machine-readable JSON / agent context Markdown
 ```
 
-### Chunks
+Rendering should not fetch, transcribe, call AI, or write files. It should consume prepared records and produce artifact content.
 
-```python
-class TranscriptChunk(BaseModel):
-    id: str
-    start: float
-    end: float | None
-    text: str
-    segment_ids: list[str]
-    char_count: int
-    approx_token_count: int
+### 8. Artifact writing
 
-class ChunkSet(BaseModel):
-    video_id: str
-    strategy: str
-    chunks: list[TranscriptChunk]
-```
+Artifact writing is the durable-output boundary.
 
-Artifact: `chunks.json`.
+The writer should:
 
-### Manifest
+- respect explicit output directory policy
+- avoid deleting user data accidentally
+- write files predictably
+- write or finalize the manifest after other artifacts
+- make partial outputs inspectable when a workflow cannot complete
 
-```python
-class ManifestStep(BaseModel):
-    name: str
-    status: Literal["ok", "skipped", "warning", "error"]
-    detail: str | None = None
+### 9. Manifest and verification
 
-class ArtifactRef(BaseModel):
-    kind: str
-    path: str
-    media_type: str
+The manifest is the audit log of a run.
 
-class Manifest(BaseModel):
-    schema_version: str = "0.1"
-    tool: str = "vctx"
-    tool_version: str
-    status: Literal["ok", "partial", "error"]
-    input: str
-    artifacts: list[ArtifactRef]
-    steps: list[ManifestStep]
-    warnings: list[str] = []
-```
+It should answer:
 
-Artifact: `manifest.json`.
+- What input was processed?
+- Which stages ran?
+- Which stages were skipped?
+- Which warnings occurred?
+- Which artifacts exist?
+- Which optional AI transformations were used?
+- Which provider/tool/model produced transformed content?
+- Is the result complete, partial, or failed?
 
-## Source adapters
+The manifest is the primary verification artifact for external agents.
 
-### Interface
+## Data categories
 
-```python
-class SourceAdapter(Protocol):
-    name: str
+The architecture distinguishes these categories instead of treating everything as generic text.
 
-    def can_handle(self, value: str) -> bool: ...
+### Source metadata
 
-    def extract_metadata(self, value: str) -> VideoMetadata: ...
+Describes the input source:
 
-    def extract_transcript(
-        self,
-        value: str,
-        *,
-        preferred_language: str | None,
-        cache: Cache,
-    ) -> TranscriptPayload: ...
-```
+- source identity
+- title
+- duration
+- uploader/channel, when available
+- provider/extractor
+- language hints
 
-### `YtDlpSourceAdapter`
+### Source payload
 
-Use for URLs supported by `yt-dlp`.
+Raw acquired material:
 
-Dependency:
+- subtitle text
+- transcript file text
+- audio asset
+- frame image
+- provider metadata payload, while still inside the adapter boundary
 
-```python
-yt_dlp.YoutubeDL
-```
+### Source-grounded records
 
-Rules:
+Normalized, timestamped units:
 
-- Use `download=False` for metadata.
-- Prefer subtitles over audio download.
-- Prefer requested language when present.
-- Prefer official subtitles over automatic captions.
-- Do not expose raw `yt-dlp` dictionaries outside the adapter.
-- Record extractor and subtitle provenance.
+- transcript segment
+- OCR segment
+- frame description segment
+- chapter boundary candidate
 
-Pseudocode:
+### Prepared context records
 
-```python
-class YtDlpSourceAdapter:
-    name = "yt-dlp"
+Records shaped for context injection:
 
-    def extract_metadata(self, url: str) -> VideoMetadata:
-        info = ytdlp_extract(url, download=False)
-        return VideoMetadata(
-            id=stable_video_id(info),
-            source_type=info.get("extractor_key", "unknown"),
-            source=SourceRef(kind="url", value=url),
-            title=info.get("title"),
-            uploader=info.get("uploader"),
-            duration_seconds=info.get("duration"),
-            webpage_url=info.get("webpage_url"),
-            extractor=info.get("extractor"),
-        )
+- chunks
+- readable timeline sections
+- context-pack sections
 
-    def extract_transcript(...):
-        info = ytdlp_extract(url, download=False)
-        subtitle_choice = choose_subtitle(info, preferred_language)
-        if not subtitle_choice:
-            raise NoTranscriptError(...)
-        subtitle_text = download_subtitle(subtitle_choice, cache)
-        return TranscriptPayload(text=subtitle_text, format=subtitle_choice.ext, provenance=...)
-```
+### Run evidence
 
-### `LocalFileSourceAdapter`
+Artifacts proving what happened:
 
-Use for local transcript files first; local audio/video support can come later.
+- manifest
+- warnings
+- provenance
+- artifact references
+- optional transformation metadata
 
-Initial support:
+## Handling missing transcripts
+
+The architecture must not assume every video site provides transcripts.
+
+When transcript-like data is unavailable, the system should support three policy outcomes:
 
 ```text
-.vtt
-.srt
-.json transcript artifact
-.txt plain transcript without timestamps, if explicitly allowed
+fail clearly
+write partial metadata/manifest artifacts
+run an explicitly enabled fallback transformation such as ASR
 ```
 
-Rules:
+The default should not silently call cloud AI, download large media, or pretend a full context pack exists.
 
-- Timestamped transcript files are preferred.
-- Plain `.txt` loses timestamp grounding and should produce a warning.
-- Local media files requiring ASR are optional later.
+A no-transcript situation is not an architectural exception; it is a normal branch in the capability router.
 
-## Subtitle parsing
+## Internal AI transformation model
 
-`parse_transcript_payload(payload)` dispatches by format:
+Internal AI transformations are modeled as adapters that consume and produce source-preparation data.
 
-```python
-def parse_transcript_payload(payload: TranscriptPayload) -> Transcript:
-    match payload.format:
-        case "vtt":
-            return parse_webvtt(payload)
-        case "srt":
-            return parse_srt(payload)
-        case "json":
-            return parse_json_transcript(payload)
-        case "plain":
-            return parse_plain_text(payload)
-        case _:
-            raise InvalidTranscriptError(...)
-```
+They are not modeled as user-facing assistants.
 
-Dependencies:
-
-- `webvtt-py` for VTT
-- `srt` for SRT
-- standard `json` for JSON artifacts
-
-## Normalization
-
-Input: `Transcript`.
-
-Output: `Transcript` with cleaned segments.
-
-Pseudocode:
-
-```python
-def normalize_transcript(raw: Transcript) -> Transcript:
-    segments = []
-    for seg in raw.segments:
-        text = clean_subtitle_text(seg.text)
-        if not text:
-            continue
-        segments.append(seg.model_copy(update={"text": text}))
-
-    segments = sort_by_start(segments)
-    segments = merge_duplicate_or_overlapping_segments(segments)
-    return raw.model_copy(update={"segments": reassign_segment_ids(segments)})
-```
-
-No summarization. No semantic rewriting.
-
-## Chunking
-
-Default strategy: deterministic character-budget chunking with timestamp preservation.
-
-Inputs:
+Abstract adapter contract:
 
 ```text
-CleanTranscript
-max_chars
-max_seconds optional
+input artifact or record
+  + transformation intent
+  + provider configuration
+  -> transformed records
+  + transformation evidence
 ```
 
-Output:
+Examples:
 
 ```text
-ChunkSet
+audio + ASR intent -> transcript segments + ASR evidence
+frame + OCR intent -> visual text segments + OCR evidence
+transcript + cleanup intent -> cleaned transcript + cleanup evidence
+transcript + chapter intent -> chapter candidates + chapter evidence
 ```
 
-Pseudocode:
+The evidence should be written into the manifest and, when useful, separate JSON artifacts.
 
-```python
-def chunk_transcript(transcript: Transcript, max_chars: int, max_seconds: int | None) -> ChunkSet:
-    chunks = []
-    current = []
+This lets an external agent decide whether to trust, cite, summarize, or rerun a step.
 
-    for segment in transcript.segments:
-        if should_flush(current, segment, max_chars, max_seconds):
-            chunks.append(build_chunk(current))
-            current = []
-        current.append(segment)
+## Boundary with external AI agents
 
-    if current:
-        chunks.append(build_chunk(current))
-
-    if not chunks:
-        raise EmptyChunksError(...)
-
-    return ChunkSet(video_id=transcript.video_id, strategy="chars-v1", chunks=chunks)
-```
-
-Approximate token count:
-
-```python
-def approx_tokens(text: str) -> int:
-    return max(1, len(text) // 4)
-```
-
-Do not add model-specific tokenizers by default.
-
-## Rendering
-
-### `context.md`
-
-Audience: AI agents.
-
-Characteristics:
-
-- compact metadata
-- explicit usage note
-- chunk boundaries with ids and timestamps
-- source text preserved
-- easy to parse from context
-
-Example shape:
-
-```markdown
-# Agent Context Pack
-
-## Metadata
-
-- Title: ...
-- URL: ...
-- Duration: ...
-- Transcript source: official_subtitles
-
-## Chunks
-
-<chunk id="chunk_001" start="00:00:00" end="00:03:20">
-...
-</chunk>
-```
-
-### `readable.md`
-
-Audience: humans.
-
-Characteristics:
-
-- pleasant Markdown
-- readable section headings by time range
-- no XML-like tags
-- no generated summary by default
-
-### `transcript.md`
-
-Audience: human debugging and source review.
-
-Characteristics:
-
-- timestamped transcript segments
-- minimal formatting
-- close to the cleaned transcript
-
-## Artifact writing
-
-Write order:
-
-1. Validate output directory policy.
-2. Write data artifacts to temporary files.
-3. Atomically replace final files where possible.
-4. Write Markdown artifacts.
-5. Write `manifest.json` last.
-
-Pseudocode:
-
-```python
-def write_artifacts(out_dir: Path, artifacts: ArtifactBundle) -> list[ArtifactRef]:
-    ensure_output_dir(out_dir)
-    refs = []
-    for artifact in artifacts:
-        tmp = out_dir / f".{artifact.name}.tmp"
-        tmp.write_text(artifact.content, encoding="utf-8")
-        tmp.replace(out_dir / artifact.name)
-        refs.append(artifact.ref)
-    return refs
-```
-
-## Error handling
-
-Use domain errors under `app/errors.py`:
-
-```python
-class VctxError(Exception): ...
-class UnsupportedSourceError(VctxError): ...
-class MetadataExtractionError(VctxError): ...
-class NoTranscriptError(VctxError): ...
-class InvalidTranscriptError(VctxError): ...
-class OutputExistsError(VctxError): ...
-class EmptyChunksError(VctxError): ...
-```
-
-CLI maps errors to exit codes:
-
-| Exit code | Meaning |
-| --- | --- |
-| `0` | success |
-| `1` | generic failure |
-| `2` | invalid CLI usage/options |
-| `3` | unsupported source |
-| `4` | transcript unavailable |
-| `5` | output error |
-
-## AI boundary
-
-No AI dependency in the default architecture.
-
-Later optional AI-mediated internals must be adapters:
+The intended collaboration is:
 
 ```text
-asr/local_whisper_adapter.py
-ocr/tesseract_adapter.py
-chunking/topic_boundary_adapter.py
+external agent decides goal
+external agent invokes vctx with explicit options
+vctx prepares context artifacts
+external agent reads manifest/context/readable artifacts
+external agent performs final summarization or knowledge-flow synthesis
 ```
 
-Rules:
+`vctx` may use AI internally to prepare better source records, but it should not become the agent.
 
-- optional extra dependency
-- explicit CLI flag
-- no chat interface
-- no cloud provider SDK by default
-- record step and provider in manifest
+## Evolution strategy
 
-## Implementation order
+New capabilities should be added as new acquisition or transformation behaviors, not as cross-cutting application features.
 
-1. Define Pydantic models.
-2. Implement timestamp formatting utilities.
-3. Implement transcript normalization.
-4. Implement deterministic chunking.
-5. Implement Markdown renderers.
-6. Implement artifact writer and manifest.
-7. Implement local `.vtt` / `.srt` transcript input.
-8. Implement `yt-dlp` URL metadata/subtitle extraction.
-9. Wire `vctx prepare`.
-10. Add tests around pure transformations and one CLI smoke test.
+Preferred evolution:
+
+```text
+local transcript input
+URL metadata
+URL subtitles
+partial manifest on missing transcript
+explicit ASR fallback
+visual/OCR enrichment
+optional cleanup/chapter transformations
+```
+
+Each capability should have a verification checklist in [`docs/workflow.md`](workflow.md) and concrete function-level details in [`docs/graph.md`](graph.md).
+
+## Architectural anti-patterns
+
+Avoid:
+
+- provider payloads flowing through the whole app
+- CLI code performing extraction/transcription/rendering directly
+- renderers writing files
+- chunkers calling providers
+- hidden model calls
+- default cloud calls
+- chat prompts embedded as product behavior
+- global mutable workflow state
+- one giant prepare function that knows every provider detail
+- treating partial output as failure when it can be useful evidence
+
+The architecture should remain boring, inspectable, and composable.

@@ -186,7 +186,18 @@ Optional extras should map to isolated capabilities:
 | Extra | Candidate dependency | Purpose | Rule |
 | --- | --- | --- | --- |
 | `asr` | `faster-whisper` | Local transcription fallback when subtitles are unavailable | Must be explicit; not required for default `prepare` when subtitles exist. |
+| `online-ai` | `httpx` or provider-specific SDKs behind adapters | Optional online ASR/OCR/VLM/cleanup calls | Must never be required by default; provider calls must be explicit and manifest-recorded. |
+| `ocr` | OCR tool wrapper or external command bridge | Optional OCR over extracted frames | Prefer external command adapters first to avoid bloating the runtime dependency set. |
 | `dev` | `pytest`, `ruff`, `ty` | Development and CI | Not runtime dependencies. |
+
+Internal AI dependencies should be selected per capability, not as global core dependencies. Prefer these integration shapes, in order:
+
+1. Existing local executable via an external-command adapter.
+2. Small focused Python dependency behind an optional extra.
+3. Online provider through a narrow adapter and explicit configuration.
+4. Provider-specific SDK only when plain HTTP is insufficient.
+
+Do not add model/provider dependencies to the default runtime path.
 
 External command-line tools may be required for specific features:
 
@@ -215,8 +226,11 @@ Do not add dependencies for:
 - web servers
 - desktop UI
 - cloud LLM providers as required/default dependencies
+- provider SDKs in core modules
 - knowledge management
 - provider-specific token counting by default
+
+Internal AI dependencies are allowed only when tied to an explicit transformation capability such as ASR, OCR, frame description, transcript cleanup, chapter suggestion, language detection, or routing.
 
 ## Code style
 

@@ -6,7 +6,7 @@ It aligns with:
 
 - [`docs/context.md`](context.md): project principles and dependency boundaries
 - [`docs/api.md`](api.md): CLI and artifact contract
-- [`docs/architecture.md`](architecture.md): module layout and pipeline architecture
+- [`docs/architecture.md`](architecture.md): abstract architecture, boundaries, and behavior model
 
 The goal is to make implementation straightforward without drifting into a monolith. The graph below is not a knowledge-management graph; it is the internal data-flow graph of a CLI context-pack compiler.
 
@@ -22,6 +22,7 @@ The function graph follows these rules:
 6. Writers do not understand video providers or transcript semantics.
 7. Every stage records enough information for `manifest.json`.
 8. Default graph uses no AI dependency.
+9. Optional internal AI transformations are explicit adapter nodes, not user-facing chat nodes.
 
 ## Top-level graph
 
@@ -34,9 +35,12 @@ vctx CLI
        -> build_cache(...)
        -> detect_source_adapter(input)
        -> adapter.extract_metadata(input)
-       -> adapter.extract_transcript(input, options)
+       -> acquire_text_or_media(input, options)
+       -> route_preparation_strategy(acquired, options)
+       -> maybe_run_internal_transformations(acquired, route, options)
        -> parse_transcript_payload(payload)
        -> normalize_transcript(raw_transcript)
+       -> maybe_run_transcript_transformations(clean_transcript, route, options)
        -> chunk_transcript(clean_transcript, chunk_options)
        -> render_artifact_bundle(metadata, transcripts, chunks, options)
        -> write_artifact_bundle(out_dir, bundle, overwrite)
@@ -54,6 +58,8 @@ build_cache                     # cache path discovery / possible directory crea
 detect_source_adapter           # may check local path existence
 adapter.extract_metadata         # network/extractor/file reads
 adapter.extract_transcript       # network/extractor/file reads/cache writes
+adapter.extract_media            # optional media download or file reads
+run_transform_adapter            # optional local/online AI/tool calls
 write_artifact_bundle            # filesystem writes
 write_manifest                   # filesystem write
 print_prepare_result             # stdout
@@ -63,6 +69,7 @@ Pure nodes:
 
 ```text
 build_prepare_request
+route_preparation_strategy from explicit options and available capabilities
 parse_transcript_payload once payload text is available
 normalize_transcript
 chunk_transcript
@@ -77,8 +84,8 @@ src/vctx/cli.py
   depends on -> app.prepare, app.errors, app.result
 
 src/vctx/app/prepare.py
-  depends on -> models.*, sources.detect, subtitles.parse,
-                transcript.normalize, chunking.chunker,
+  depends on -> models.*, sources.detect, transforms.routing,
+                subtitles.parse, transcript.normalize, chunking.chunker,
                 render.*, io.writer, io.cache, util.versions
 
 src/vctx/sources/detect.py
@@ -89,6 +96,9 @@ src/vctx/sources/ytdlp_source.py
 
 src/vctx/sources/local_file_source.py
   depends on -> pathlib, models.metadata, sources.base
+
+src/vctx/transforms/*.py
+  depends on -> models.*, io.cache, optional provider adapters
 
 src/vctx/subtitles/parse.py
   depends on -> subtitles.webvtt_parser, subtitles.srt_parser, models.transcript
@@ -116,6 +126,8 @@ chunking -> sources
 transcript -> sources
 sources -> render
 sources -> chunking
+transforms -> render
+transforms -> CLI
 CLI -> yt_dlp directly
 CLI -> filesystem artifact writing directly
 ```
@@ -194,6 +206,9 @@ class PrepareRequest(BaseModel):
     cache_dir: Path | None = None
     keep_temp: bool = False
     formats: set[OutputFormat] = DEFAULT_FORMATS
+    asr: AsrMode | None = None
+    ai_transforms: list[TransformRequest] = []
+    on_missing_transcript: MissingTranscriptPolicy = "partial"
 
 
 def prepare_context_pack(request: PrepareRequest) -> PrepareResult: ...
@@ -214,18 +229,36 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
     metadata = adapter.extract_metadata(request.input)
     manifest.add_step("metadata.extract", "ok")
 
-    payload = adapter.extract_transcript(
-        request.input,
+    acquisition = acquire_transcript_or_media(
+        adapter=adapter,
+        input=request.input,
         preferred_language=request.language,
         cache=cache,
+        asr=request.asr,
+        on_missing_transcript=request.on_missing_transcript,
     )
-    manifest.add_step("transcript.extract", "ok", payload.provenance_label())
+    manifest.extend(acquisition.steps)
 
+    if acquisition.status == "partial":
+        partial_refs = write_partial_artifacts(request.out_dir, metadata, acquisition.warnings)
+        partial_manifest = manifest.finish(status="partial", artifacts=partial_refs)
+        write_manifest(request.out_dir, partial_manifest)
+        return PrepareResult(out_dir=request.out_dir, manifest=partial_manifest, artifacts=partial_refs)
+
+    payload = acquisition.transcript_payload
     raw = parse_transcript_payload(payload, video_id=metadata.id)
     manifest.add_step("transcript.parse", "ok", raw.provenance.format)
 
     clean = normalize_transcript(raw)
     manifest.add_step("transcript.normalize", "ok", f"{len(clean.segments)} segments")
+
+    transform_result = run_requested_transforms(
+        clean,
+        requests=request.ai_transforms,
+        cache=cache,
+    )
+    clean = transform_result.transcript
+    manifest.extend(transform_result.steps)
 
     chunks = chunk_transcript(
         clean,
@@ -421,6 +454,190 @@ Supported suffixes initially:
 ```
 
 Plain `.txt` can be added later only if the warning and timestamp-loss behavior is explicit.
+
+## Internal AI transformation function API
+
+Internal AI transformations are optional source-preparation nodes. They are not chat, Q&A, memory, or final summarization features.
+
+### Conceptual module layout
+
+```text
+src/vctx/transforms/
+  __init__.py
+  base.py
+  routing.py
+  result.py
+  asr.py
+  cleanup.py
+  visual.py
+
+src/vctx/transforms/providers/
+  local_faster_whisper.py      # optional asr extra
+  external_command.py          # generic local tool bridge
+  online_http.py               # optional configured online provider bridge
+```
+
+Provider modules should remain leaf adapters. Core pipeline code talks to the abstract transform API, not to provider SDKs directly.
+
+### Request models
+
+```python
+TransformKind = Literal[
+    "asr",
+    "ocr",
+    "frame_description",
+    "transcript_cleanup",
+    "chapter_suggestion",
+    "language_detection",
+    "route",
+]
+
+TransformProvider = Literal[
+    "local",
+    "external-command",
+    "online",
+]
+
+class TransformRequest(BaseModel):
+    kind: TransformKind
+    provider: TransformProvider
+    name: str | None = None       # e.g. faster-whisper, openai, local-vlm
+    model: str | None = None
+    options: dict[str, JsonValue] = {}
+```
+
+CLI can build these requests from explicit flags such as:
+
+```text
+--asr local
+--transform transcript-cleanup:external-command:cleanup-script
+--transform chapter-suggestion:online:configured-provider
+```
+
+The exact flag syntax can evolve, but the graph rule is stable: every AI/tool-mediated transformation becomes an explicit `TransformRequest`.
+
+### Adapter protocol
+
+```python
+class TransformAdapter(Protocol):
+    kind: TransformKind
+    provider: TransformProvider
+    name: str
+
+    def can_handle(self, request: TransformRequest) -> bool: ...
+
+    def run(self, input: TransformInput, request: TransformRequest, cache: Cache) -> TransformResult: ...
+```
+
+### Input and result envelopes
+
+```python
+class TransformInput(BaseModel):
+    metadata: VideoMetadata | None = None
+    transcript: Transcript | None = None
+    media: MediaAsset | None = None
+    frames: list[FrameAsset] = []
+
+class TransformEvidence(BaseModel):
+    kind: TransformKind
+    provider: TransformProvider
+    name: str
+    model: str | None = None
+    source_artifacts: list[str] = []
+    output_artifacts: list[str] = []
+    deterministic: bool = False
+    warnings: list[str] = []
+
+class TransformResult(BaseModel):
+    transcript: Transcript | None = None
+    visual_records: list[VisualRecord] = []
+    chapter_candidates: list[ChapterCandidate] = []
+    language: str | None = None
+    evidence: TransformEvidence
+```
+
+Transform results are converted back into normal internal records before chunking/rendering.
+
+### ASR fallback graph
+
+```text
+acquire_transcript_or_media(input, asr=local)
+  -> adapter.extract_transcript(...)
+       -> if subtitles exist: TranscriptPayload
+       -> if subtitles missing: NoTranscript
+  -> adapter.extract_media(...)
+  -> select_transform_adapter(kind="asr", provider="local")
+  -> asr_adapter.run(media, request, cache)
+  -> TranscriptPayload or Transcript
+  -> manifest step: transform.asr
+```
+
+ASR is acceptable because its bounded behavior is:
+
+```text
+audio -> timestamped transcript
+```
+
+It must not produce final notes or answers.
+
+### Transcript cleanup graph
+
+```text
+clean Transcript
+  -> TransformRequest(kind="transcript_cleanup", provider=...)
+  -> cleanup_adapter.run(transcript, request, cache)
+  -> cleaned Transcript
+  -> manifest step: transform.transcript_cleanup
+  -> chunking
+```
+
+Cleanup must preserve timestamps and segment/source ids when practical. If a cleanup step rewrites text semantically, the manifest must make that visible.
+
+### Visual enrichment graph
+
+```text
+media
+  -> sample frames
+  -> TransformRequest(kind="ocr" or "frame_description")
+  -> visual_adapter.run(frames, request, cache)
+  -> timestamped visual records
+  -> optional visual artifacts
+  -> manifest step: transform.visual
+```
+
+Visual records may later be rendered into `readable.md` or `context.md`, but the renderer still receives normalized records, not raw provider responses.
+
+### Provider selection
+
+```python
+def select_transform_adapter(
+    request: TransformRequest,
+    adapters: Sequence[TransformAdapter],
+) -> TransformAdapter:
+    for adapter in adapters:
+        if adapter.can_handle(request):
+            return adapter
+    raise UnsupportedTransformError(request)
+```
+
+Provider selection must not silently choose online providers. Online providers require explicit configuration and explicit request selection.
+
+### Manifest requirements
+
+Every transform step must add manifest evidence:
+
+```text
+transform.<kind>
+  status: ok | skipped | warning | error
+  provider: local | external-command | online
+  name: provider/tool name
+  model: optional model id
+  deterministic: false unless guaranteed
+  source_artifacts: paths or ids used
+  output_artifacts: paths or ids produced
+```
+
+This lets external agents inspect whether a context pack is purely subtitle-derived or model-mediated.
 
 ## Subtitle parser function API
 
@@ -716,7 +933,9 @@ Every function graph starts at an explicit command and ends with explicit files 
 
 ### No embedded AI communication layer
 
-There are no graph nodes for chat, Q&A, summarization, RAG, or knowledge management.
+The graph may include explicit internal AI transformation nodes such as ASR, OCR, frame description, cleanup, chapter suggestion, language detection, or routing.
+
+There are still no graph nodes for chat, user-facing Q&A, memory, RAG, knowledge management, or final answer generation.
 
 ### Readable and machine-readable
 
