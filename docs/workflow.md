@@ -576,6 +576,117 @@ route.cost_mode = local/free/configured/unknown
 - Keep ASR provider types behind an adapter.
 - Convert ASR result into the same `Transcript` model used by subtitles.
 
+### Proposed ASR model design
+
+Keep ASR as a bounded model transform, not a user-facing AI chat surface.
+
+Core records:
+
+```text
+MediaAsset
+  id: str
+  source_uri: str | path
+  local_path: Path | None
+  media_type: audio | video
+  container: mp3 | m4a | wav | mp4 | webm | unknown
+  duration_seconds: float | None
+  language_hint: str | None
+  provenance: source adapter + extraction command/evidence
+
+AsrOptions
+  language: str | None
+  timestamp_granularity: segment | word
+  compute_policy: local-default | local-fast | local-quality | configured-online
+
+AsrAdapter
+  provider_id: str
+  model_id: str
+  transcribe(media_asset, options) -> TranscriptPayload
+```
+
+ASR returns the existing transcript boundary type:
+
+```text
+TranscriptPayload
+  text: subtitle-like serialized text or normalized provider text
+  format: vtt | srt | json | plain | unknown
+  provenance:
+    method = asr
+    provider = faster-whisper | configured provider id
+    language = detected/requested language
+```
+
+Then the existing pipeline remains unchanged:
+
+```text
+TranscriptPayload
+  -> parse_transcript_payload()
+  -> normalize_transcript()
+  -> chunk_transcript()
+  -> render_artifact_bundle()
+```
+
+### Proposed default ASR route
+
+Use one best default instead of a provider menu:
+
+```text
+1. If subtitles exist: do not run ASR.
+2. If media is unavailable: partial metadata output with ASR unavailable evidence.
+3. If local ASR extra is installed: run local faster-whisper default adapter.
+4. If a curated free/no-config online ASR route exists and policy allows network/upload: use it only when materially better or local is unavailable.
+5. If user/project configured an online ASR provider and policy allows upload: use configured-online.
+6. Otherwise: write partial metadata output with actionable ASR requirements.
+```
+
+Initial practical default:
+
+```text
+local ASR adapter: faster-whisper
+optional dependency group: asr
+model policy: auto-select one local default by hardware/cache
+CPU default: base or small int8
+GPU default: small or medium when available
+```
+
+No external command adapter should be the primary UX. Shelling to `ffmpeg` is acceptable for media conversion because it is an infrastructure tool, not the ASR provider UX.
+
+### How Level 4 should work end-to-end
+
+```text
+vctx prepare URL --out out
+  -> source.extract_metadata(URL)
+  -> source.extract_transcript(URL)
+  -> NoTranscript
+  -> source.extract_media(URL, cache, purpose=asr)
+  -> plan_asr(policy, environment, source_state)
+  -> run_asr(plan, media_asset, cache)
+  -> TranscriptPayload(method=asr, provider=...)
+  -> same transcript/chunk/render pipeline as Level 0/2
+  -> manifest records ASR route/evidence/cost/upload policy
+```
+
+For local media:
+
+```text
+vctx prepare lecture.mp4 --out out
+  -> local media source adapter extracts synthetic metadata
+  -> no subtitles
+  -> local media asset path is already available
+  -> same ASR route planning/execution
+```
+
+### Level 4 implementation order
+
+1. Add `MediaAsset` model and `SourceAdapter.extract_media()` contract.
+2. Implement local media file detection for `.mp4/.m4a/.mp3/.wav/.webm`.
+3. Implement `yt-dlp` media acquisition for ASR purpose without downloading media unless ASR is selected.
+4. Add pure `plan_asr()` with environment detection and no side effects.
+5. Add `FasterWhisperAsrAdapter` behind optional `asr` dependency.
+6. Wire `prepare` no-subtitle path from partial output to ASR when route is available.
+7. Add manifest evidence for route, provider, model, upload/network/cost flags, and generated transcript provenance.
+8. Keep current partial metadata output when ASR is unavailable.
+
 ## Level 5 — optional visual/context enrichment
 
 Purpose:

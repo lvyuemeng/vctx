@@ -16,7 +16,7 @@ def _timestamp_to_seconds(value: str) -> float:
 
 
 def parse_webvtt(payload: TranscriptPayload, *, video_id: str) -> Transcript:
-    captions = webvtt.read_buffer(io.StringIO(payload.text)).captions
+    captions = webvtt.from_buffer(io.StringIO(payload.text)).captions
     segments = [
         TranscriptSegment(
             id=f"seg_{index:06d}",
