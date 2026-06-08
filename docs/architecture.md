@@ -122,12 +122,15 @@ Internal AI transformations are acceptable when they are bounded and source-prep
 These transformations must be:
 
 - explicit through command options or configuration
-- replaceable through adapters
+- selected by a small curated routing policy rather than a large user-facing provider menu
+- local, efficient, free, and zero-configuration when local quality is good enough
+- allowed to use online providers when local quality is not good enough and the user explicitly enables that route
+- replaceable through adapters internally
 - recorded in the manifest
 - traceable back to source material when practical
 - optional rather than required for the default path
 
-`vctx` may call local models, online APIs, or external tools, but those calls are implementation details behind transformation adapters. The user interface remains CLI commands and artifact files, not chat.
+`vctx` may call local models or online APIs behind transformation adapters. The user interface remains CLI commands and artifact files, not chat. Avoid exposing raw external-command wiring as the normal UX; prefer one curated default route per capability.
 
 ## Abstract behavior map
 

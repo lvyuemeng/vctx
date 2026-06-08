@@ -472,9 +472,10 @@ src/vctx/transforms/
   visual.py
 
 src/vctx/transforms/providers/
-  local_faster_whisper.py      # optional asr extra
-  external_command.py          # generic local tool bridge
-  online_http.py               # optional configured online provider bridge
+  local_faster_whisper.py      # curated local ASR default when enabled
+  local_ocr.py                 # curated local OCR default when enabled
+  online_http.py               # curated online provider bridge when local quality is not enough
+  external_command.py          # developer escape hatch, not primary UX
 ```
 
 Provider modules should remain leaf adapters. Core pipeline code talks to the abstract transform API, not to provider SDKs directly.
@@ -494,8 +495,8 @@ TransformKind = Literal[
 
 TransformProvider = Literal[
     "local",
-    "external-command",
     "online",
+    "external-command",  # escape hatch only; not primary UX
 ]
 
 class TransformRequest(BaseModel):
@@ -506,15 +507,18 @@ class TransformRequest(BaseModel):
     options: dict[str, JsonValue] = {}
 ```
 
-CLI can build these requests from explicit flags such as:
+CLI should expose capability-level choices, not a broad provider menu. Examples:
 
 ```text
---asr local
---transform transcript-cleanup:external-command:cleanup-script
---transform chapter-suggestion:online:configured-provider
+--asr local            # curated local ASR route
+--asr online           # curated online ASR route, explicit because it may cost/upload
+--cleanup local        # curated local cleanup if available
+--cleanup online       # curated online cleanup, explicit
+--visual-context local # curated local OCR/VLM route if available
+--visual-context online
 ```
 
-The exact flag syntax can evolve, but the graph rule is stable: every AI/tool-mediated transformation becomes an explicit `TransformRequest`.
+The graph rule is stable: every AI/model-mediated transformation becomes an explicit `TransformRequest`, but the CLI should keep choices minimal. If multiple implementations can do the same job, choose the best project default instead of asking the user to choose among many raw providers.
 
 ### Adapter protocol
 
@@ -620,7 +624,42 @@ def select_transform_adapter(
     raise UnsupportedTransformError(request)
 ```
 
-Provider selection must not silently choose online providers. Online providers require explicit configuration and explicit request selection.
+Provider selection should be curated and small. It must not silently choose online providers. Online providers require explicit configuration and explicit request selection. External-command adapters are escape hatches for development or unusual integrations, not the recommended user workflow.
+
+### Transformation route policy
+
+The route policy chooses the best implementation for a capability with minimal user choice.
+
+```text
+Capability requested?
+  -> no: skip
+  -> yes:
+       prefer curated local route if quality is good enough
+       else require explicit online route
+       else fail clearly or write partial manifest
+```
+
+Recommended defaults by capability:
+
+| Capability | Preferred route | Online route | Notes |
+| --- | --- | --- | --- |
+| ASR | local `faster-whisper` small/base after explicit `--asr local` | explicit `--asr online` if local quality/speed is not acceptable | ASR solves the no-transcript case. |
+| OCR | curated local OCR if dependency/tooling is acceptable | explicit online vision/OCR when local OCR quality is poor | Keep OCR output timestamped by frame. |
+| Frame description | local only if a small good model is available | likely online for quality | Must be labeled as generated visual description. |
+| Transcript cleanup | deterministic cleanup first; local model if good enough | explicit online cleanup for quality | Must preserve timestamps/source ids. |
+| Chapter suggestion | deterministic/time-based first; model route optional | explicit online if quality matters | Produces candidates, not final summary. |
+| Language detection | lightweight local heuristic/library | online only if needed | Should not become a general LLM call by default. |
+
+This policy keeps the interface small:
+
+```text
+--asr local|online|off
+--visual-context local|online|off
+--cleanup local|online|off
+--chapters local|online|off
+```
+
+No provider-specific selection should appear unless necessary for configuration or debugging.
 
 ### Manifest requirements
 
@@ -629,7 +668,7 @@ Every transform step must add manifest evidence:
 ```text
 transform.<kind>
   status: ok | skipped | warning | error
-  provider: local | external-command | online
+  provider: local | online | external-command
   name: provider/tool name
   model: optional model id
   deterministic: false unless guaranteed

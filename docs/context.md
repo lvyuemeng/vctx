@@ -186,18 +186,21 @@ Optional extras should map to isolated capabilities:
 | Extra | Candidate dependency | Purpose | Rule |
 | --- | --- | --- | --- |
 | `asr` | `faster-whisper` | Local transcription fallback when subtitles are unavailable | Must be explicit; not required for default `prepare` when subtitles exist. |
-| `online-ai` | `httpx` or provider-specific SDKs behind adapters | Optional online ASR/OCR/VLM/cleanup calls | Must never be required by default; provider calls must be explicit and manifest-recorded. |
-| `ocr` | OCR tool wrapper or external command bridge | Optional OCR over extracted frames | Prefer external command adapters first to avoid bloating the runtime dependency set. |
+| `online-ai` | `httpx` or provider-specific SDKs behind adapters | Optional online ASR/OCR/VLM/cleanup calls when local quality is not good enough | Must never be required by default; provider calls must be explicit and manifest-recorded. |
+| `ocr` | focused local OCR library/tool adapter or online vision adapter | Optional OCR over extracted frames | Prefer one curated default per capability; do not expose raw command wiring as the primary UX. |
 | `dev` | `pytest`, `ruff`, `ty` | Development and CI | Not runtime dependencies. |
 
-Internal AI dependencies should be selected per capability, not as global core dependencies. Prefer these integration shapes, in order:
+Internal AI dependencies should be selected per capability, not as global core dependencies. For each capability, prefer one curated project default instead of exposing many equivalent choices to the user.
 
-1. Existing local executable via an external-command adapter.
-2. Small focused Python dependency behind an optional extra.
-3. Online provider through a narrow adapter and explicit configuration.
-4. Provider-specific SDK only when plain HTTP is insufficient.
+Selection order:
 
-Do not add model/provider dependencies to the default runtime path.
+1. Local, efficient, free, zero-configuration model/tool when quality is good enough.
+2. Online provider through a narrow adapter when local quality is not good enough and the user explicitly enables it.
+3. Provider-specific SDK only when plain HTTP or a small adapter is insufficient.
+
+External command adapters may exist for development or escape-hatch integrations, but they should not be the primary user-facing workflow because they are too raw for the project goal.
+
+Do not add model/provider dependencies to the default runtime path unless they are required for a curated default capability.
 
 External command-line tools may be required for specific features:
 
