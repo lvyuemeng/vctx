@@ -81,11 +81,8 @@ PrepareRequest
   overwrite: bool = false
   cache_dir: Path | Default = Default
   formats: list[Format] | Default = Default
-  auto: bool = true
+  workflow: default | transcript | visual | full | metadata = default
   offline: bool = false
-  visual_context: CapabilitySwitch = Auto
-  cleanup: CapabilitySwitch = Auto
-  chapters: CapabilitySwitch = Auto
   config_path: Path | None = None
 ```
 
@@ -95,7 +92,7 @@ ResolvedConfig
     cache_dir
     keep_temp
     offline
-    auto
+    workflow
   source:
     preferred_language
     subtitle_fallback_order
@@ -132,6 +129,16 @@ Default capability behavior:
 | cleanup | auto | deterministic cleanup always; model cleanup only if safe/useful |
 | chapters | auto | deterministic candidates when useful; model route only if safe/useful |
 
+Workflow instances are decisive presets, not vague trigger flags:
+
+| Workflow | ASR | visual context | cleanup | chapters |
+| --- | --- | --- | --- | --- |
+| `default` | auto | auto | auto | auto |
+| `transcript` | auto | false | false | false |
+| `visual` | auto | true | auto | auto |
+| `full` | auto | true | true | true |
+| `metadata` | false | false | false | false |
+
 ### Config file sketch
 
 Config should be small and optional:
@@ -139,16 +146,16 @@ Config should be small and optional:
 ```toml
 [runtime]
 offline = false
-auto = true
+workflow = "default"
 
 [source]
 preferred_language = "auto"
 
-[transforms.visual_context]
-enabled = "auto"
-
-[transforms.asr]
-enabled = "auto"
+[workflow.default]
+# Optional. Missing capability fields resolve to default/auto.
+visual_context = "auto"
+cleanup = "auto"
+chapters = "auto"
 
 [providers.default_online]
 # Optional. Missing means configured-online routes are unavailable.

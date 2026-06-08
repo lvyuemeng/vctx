@@ -44,17 +44,14 @@ Options:
 | --- | --- | --- |
 | `--out DIR` | required | Output directory for durable artifacts. |
 | `--language LANG` | auto | Preferred subtitle language, for example `en`, `zh`, `zh-Hans`. |
-| `--overwrite / --no-overwrite` | `--no-overwrite` | Whether an existing output directory can be reused. |
+| `--overwrite` | unset | Allow reusing an existing output directory. |
 | `--chunk-max-chars INT` | `6000` | Maximum approximate characters per chunk before flushing. |
 | `--chunk-max-seconds INT` | unset | Optional maximum chunk duration. |
 | `--cache-dir DIR` | platform cache dir | Override cache location. |
-| `--keep-temp / --no-keep-temp` | `--no-keep-temp` | Preserve temporary downloads/intermediate files. |
+| `--keep-temp` | unset | Preserve temporary downloads/intermediate files. |
 | `--format NAME` | all default formats | Repeatable output selector. Initial values: `json`, `context`, `readable`, `transcript`. |
-| `--auto / --no-auto` | `--auto` | Let `vctx` choose the best available default route for transcript fallback and safe enrichment. |
-| `--offline / --no-offline` | `--no-offline` | Disable online model/service routes even when they are free and zero-config. |
-| `--visual-context / --no-visual-context` | auto | Enable or disable visual OCR/frame-description enrichment. Auto means only when useful and supported. |
-| `--cleanup / --no-cleanup` | auto | Enable or disable safe transcript cleanup beyond deterministic normalization. |
-| `--chapters / --no-chapters` | auto | Enable or disable chapter-boundary candidate generation. |
+| `--workflow NAME` | `default` | Select a meaningful preparation workflow instance: `default`, `transcript`, `visual`, `full`, or `metadata`. |
+| `--offline` | unset | Use the offline workflow policy; network/model-service routes are unavailable. |
 
 Default output files:
 
@@ -88,7 +85,7 @@ warning: official subtitles not found; used automatic subtitles for language en
 Failure stderr example:
 
 ```text
-error: no transcript found for input; no default transcript fallback route is available. Provide a transcript file, install the default ASR extra, configure an online route, or rerun with --no-auto for metadata-only partial output.
+error: no transcript found for input; no default transcript fallback route is available. Provide a transcript file, install the default ASR extra, configure an online route, or use --workflow metadata for metadata-only output.
 ```
 
 ### Auto-adaptive transformations
@@ -112,7 +109,7 @@ prepare INPUT
        -> platform metadata
        -> official/manual subtitles
        -> automatic subtitles
-  -> if transcript unavailable and auto routing is enabled:
+  -> if transcript unavailable and workflow allows transcript fallback:
        -> route default transcript fallback
        -> local/free-online/configured-online ASR
        -> timestamped transcript

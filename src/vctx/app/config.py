@@ -15,6 +15,14 @@ class CapabilityEnabled(StrEnum):
     FALSE = "false"
 
 
+class WorkflowProfile(StrEnum):
+    DEFAULT = "default"
+    TRANSCRIPT = "transcript"
+    VISUAL = "visual"
+    FULL = "full"
+    METADATA = "metadata"
+
+
 CapabilityRoute = Literal["auto", "default", "disabled", "explicit"]
 
 
@@ -28,11 +36,8 @@ class PrepareRequest(BaseModel):
     cache_dir: Path | None = None
     keep_temp: bool = False
     formats: set[OutputFormat] = DEFAULT_FORMATS
-    auto: bool = True
+    workflow: WorkflowProfile = WorkflowProfile.DEFAULT
     offline: bool = False
-    visual_context: CapabilityEnabled | None = None
-    cleanup: CapabilityEnabled | None = None
-    chapters: CapabilityEnabled | None = None
     config_path: Path | None = None
 
 
@@ -40,7 +45,7 @@ class RuntimeConfig(BaseModel):
     cache_dir: Path | None
     keep_temp: bool
     offline: bool
-    auto: bool
+    workflow: WorkflowProfile
 
 
 class SourceConfig(BaseModel):
@@ -79,29 +84,55 @@ class ResolvedConfig(BaseModel):
     output: OutputConfig
 
 
-def _auto_enabled(enabled: CapabilityEnabled | None, *, global_auto: bool) -> CapabilityEnabled:
-    if enabled is not None:
-        return enabled
-    if global_auto:
-        return CapabilityEnabled.AUTO
-    return CapabilityEnabled.FALSE
-
-
 def _policy(
-    enabled: CapabilityEnabled | None,
-    *,
-    global_auto: bool,
-    offline: bool,
-    allow_upload: bool = True,
+    enabled: CapabilityEnabled, *, offline: bool, allow_upload: bool = True
 ) -> CapabilityPolicy:
-    resolved_enabled = _auto_enabled(enabled, global_auto=global_auto)
     network_allowed = not offline
     return CapabilityPolicy(
-        enabled=resolved_enabled,
-        route="auto" if resolved_enabled != CapabilityEnabled.FALSE else "disabled",
+        enabled=enabled,
+        route="auto" if enabled != CapabilityEnabled.FALSE else "disabled",
         allow_network=network_allowed,
         allow_upload=network_allowed and allow_upload,
         allow_paid=False,
+    )
+
+
+def _workflow_capabilities(
+    workflow: WorkflowProfile,
+) -> tuple[CapabilityEnabled, CapabilityEnabled, CapabilityEnabled, CapabilityEnabled]:
+    if workflow == WorkflowProfile.METADATA:
+        return (
+            CapabilityEnabled.FALSE,
+            CapabilityEnabled.FALSE,
+            CapabilityEnabled.FALSE,
+            CapabilityEnabled.FALSE,
+        )
+    if workflow == WorkflowProfile.TRANSCRIPT:
+        return (
+            CapabilityEnabled.AUTO,
+            CapabilityEnabled.FALSE,
+            CapabilityEnabled.FALSE,
+            CapabilityEnabled.FALSE,
+        )
+    if workflow == WorkflowProfile.VISUAL:
+        return (
+            CapabilityEnabled.AUTO,
+            CapabilityEnabled.TRUE,
+            CapabilityEnabled.AUTO,
+            CapabilityEnabled.AUTO,
+        )
+    if workflow == WorkflowProfile.FULL:
+        return (
+            CapabilityEnabled.AUTO,
+            CapabilityEnabled.TRUE,
+            CapabilityEnabled.TRUE,
+            CapabilityEnabled.TRUE,
+        )
+    return (
+        CapabilityEnabled.AUTO,
+        CapabilityEnabled.AUTO,
+        CapabilityEnabled.AUTO,
+        CapabilityEnabled.AUTO,
     )
 
 
@@ -113,21 +144,20 @@ def resolve_config(request: PrepareRequest) -> ResolvedConfig:
     """
 
     del request.config_path
+    asr, visual_context, cleanup, chapters = _workflow_capabilities(request.workflow)
     return ResolvedConfig(
         runtime=RuntimeConfig(
             cache_dir=request.cache_dir,
             keep_temp=request.keep_temp,
             offline=request.offline,
-            auto=request.auto,
+            workflow=request.workflow,
         ),
         source=SourceConfig(preferred_language=request.language),
         transforms=TransformConfig(
-            asr=_policy(None, global_auto=request.auto, offline=request.offline),
-            visual_context=_policy(
-                request.visual_context, global_auto=request.auto, offline=request.offline
-            ),
-            cleanup=_policy(request.cleanup, global_auto=request.auto, offline=request.offline),
-            chapters=_policy(request.chapters, global_auto=request.auto, offline=request.offline),
+            asr=_policy(asr, offline=request.offline),
+            visual_context=_policy(visual_context, offline=request.offline),
+            cleanup=_policy(cleanup, offline=request.offline),
+            chapters=_policy(chapters, offline=request.offline),
         ),
         output=OutputConfig(
             formats=request.formats,

@@ -302,8 +302,8 @@ This level is optional. It should not block transcript-centric workflows.
 ### Command examples
 
 ```bash
-uv run vctx prepare "https://..." --out ./out/video --visual-context
-uv run vctx prepare "https://..." --out ./out/video --no-visual-context
+uv run vctx prepare "https://..." --out ./out/video --workflow visual
+uv run vctx prepare "https://..." --out ./out/video --workflow transcript
 ```
 
 ### Required behavior

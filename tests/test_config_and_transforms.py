@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from vctx.app.config import CapabilityEnabled, PrepareRequest, resolve_config
+from typer.testing import CliRunner
+
+from vctx.app.config import CapabilityEnabled, PrepareRequest, WorkflowProfile, resolve_config
+from vctx.cli import app
 from vctx.transforms.planning import (
     SourceState,
     TransformEnvironment,
@@ -16,7 +19,7 @@ def test_resolve_config_missing_fields_become_default_auto(tmp_path: Path) -> No
 
     resolved = resolve_config(request)
 
-    assert resolved.runtime.auto is True
+    assert resolved.runtime.workflow == WorkflowProfile.DEFAULT
     assert resolved.runtime.offline is False
     assert resolved.source.preferred_language is None
     assert resolved.transforms.asr.enabled == CapabilityEnabled.AUTO
@@ -63,6 +66,37 @@ def test_plan_asr_skips_when_transcript_exists(tmp_path: Path) -> None:
 
     assert plan.selected == "skipped"
     assert plan.reason == "transcript already available"
+
+
+def test_transcript_workflow_is_decisive_and_disables_enrichment(tmp_path: Path) -> None:
+    request = PrepareRequest(
+        input="lecture.srt",
+        out_dir=tmp_path / "out",
+        workflow=WorkflowProfile.TRANSCRIPT,
+    )
+
+    resolved = resolve_config(request)
+
+    assert resolved.runtime.workflow == WorkflowProfile.TRANSCRIPT
+    assert resolved.transforms.asr.enabled == CapabilityEnabled.AUTO
+    assert resolved.transforms.visual_context.enabled == CapabilityEnabled.FALSE
+    assert resolved.transforms.cleanup.enabled == CapabilityEnabled.FALSE
+    assert resolved.transforms.chapters.enabled == CapabilityEnabled.FALSE
+
+
+def test_prepare_help_uses_decisive_flags_without_negation_pairs() -> None:
+    result = CliRunner().invoke(app, ["prepare", "--help"])
+
+    assert result.exit_code == 0
+    assert "--workflow" in result.output
+    assert "--offline" in result.output
+    assert "--no-auto" not in result.output
+    assert "--no-offline" not in result.output
+    assert "--no-overwrite" not in result.output
+    assert "--no-keep-temp" not in result.output
+    assert "--no-visual-context" not in result.output
+    assert "--no-cleanup" not in result.output
+    assert "--no-chapters" not in result.output
 
 
 def test_visual_context_prefers_free_online_for_vlm_when_local_ocr_is_not_suitable(

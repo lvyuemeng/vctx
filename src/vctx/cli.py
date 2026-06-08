@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from vctx.app.config import CapabilityEnabled
+from vctx.app.config import WorkflowProfile
 from vctx.app.errors import VctxError
 from vctx.app.prepare import PrepareRequest, prepare_context_pack
 
@@ -26,19 +26,21 @@ def prepare_command(
     chunk_max_seconds: Annotated[int | None, typer.Option("--chunk-max-seconds")] = None,
     cache_dir: Annotated[Path | None, typer.Option("--cache-dir")] = None,
     keep_temp: Annotated[bool, typer.Option("--keep-temp")] = False,
-    auto: Annotated[bool, typer.Option("--auto/--no-auto")] = True,
-    offline: Annotated[bool, typer.Option("--offline/--no-offline")] = False,
-    visual_context: Annotated[
-        bool | None, typer.Option("--visual-context/--no-visual-context")
-    ] = None,
-    cleanup: Annotated[bool | None, typer.Option("--cleanup/--no-cleanup")] = None,
-    chapters: Annotated[bool | None, typer.Option("--chapters/--no-chapters")] = None,
+    workflow: Annotated[
+        WorkflowProfile,
+        typer.Option(
+            "--workflow",
+            help="Preparation workflow instance: default, transcript, visual, full, or metadata.",
+        ),
+    ] = WorkflowProfile.DEFAULT,
+    offline: Annotated[
+        bool,
+        typer.Option(
+            "--offline",
+            help="Use the offline workflow policy; network routes unavailable.",
+        ),
+    ] = False,
 ) -> None:
-    def capability(value: bool | None) -> CapabilityEnabled | None:
-        if value is None:
-            return None
-        return CapabilityEnabled.TRUE if value else CapabilityEnabled.FALSE
-
     try:
         result = prepare_context_pack(
             PrepareRequest(
@@ -50,11 +52,8 @@ def prepare_command(
                 chunk_max_seconds=chunk_max_seconds,
                 cache_dir=cache_dir,
                 keep_temp=keep_temp,
-                auto=auto,
+                workflow=workflow,
                 offline=offline,
-                visual_context=capability(visual_context),
-                cleanup=capability(cleanup),
-                chapters=capability(chapters),
             )
         )
     except VctxError as exc:
