@@ -80,8 +80,10 @@ video / audio / URL
 - [`docs/context.md`](docs/context.md): project goal, stack, style, and constraints
 - [`docs/architecture.md`](docs/architecture.md): abstract architecture, behavior boundaries, and system principles
 - [`docs/api.md`](docs/api.md): CLI commands, artifact contract, JSON shapes, and agent interaction model
-- [`docs/workflow.md`](docs/workflow.md): capability levels and verifiable checklists for implemented workflow slices
+- [`docs/model-stack.md`](docs/model-stack.md): concrete model transformation tech stack, routing policy, and capability API graph
+- [`docs/workflow.md`](docs/workflow.md): capability levels and verifiable checklists for implemented workflows
 - [`docs/graph.md`](docs/graph.md): function-level module graph, pseudocode, and dependency direction rules
+
 
 ## Current status
 

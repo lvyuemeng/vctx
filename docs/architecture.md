@@ -133,6 +133,8 @@ These transformations must be:
 
 `vctx` may call local models or online APIs behind transformation adapters. The user interface remains CLI commands and artifact files, not chat. Avoid exposing raw external-command wiring as the normal UX; prefer one curated default route per capability.
 
+Technology and concrete model choices are not decided in this abstract architecture document. See [`docs/model-stack.md`](model-stack.md) for the concrete model-transformation stack and capability API graph.
+
 ## Abstract behavior map
 
 ### 1. Intent capture

@@ -181,6 +181,8 @@ Notes:
 
 ### Optional dependencies
 
+Detailed model-transformation technology choices live in [`docs/model-stack.md`](model-stack.md). This section defines dependency policy only.
+
 Optional extras should map to isolated capabilities:
 
 | Extra | Candidate dependency | Purpose | Rule |

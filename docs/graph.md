@@ -459,6 +459,8 @@ Plain `.txt` can be added later only if the warning and timestamp-loss behavior 
 
 Internal AI transformations are optional source-preparation nodes. They are not chat, Q&A, memory, or final summarization features.
 
+Detailed technology choices, model/provider preference, and capability-level API graphs are defined in [`docs/model-stack.md`](model-stack.md). This section defines the function/module graph those choices plug into.
+
 ### Conceptual module layout
 
 ```text
