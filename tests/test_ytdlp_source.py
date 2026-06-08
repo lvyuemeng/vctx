@@ -90,6 +90,99 @@ def test_ytdlp_extract_transcript_prefers_official_subtitles(
     assert payload.provenance.provider == "yt-dlp"
 
 
+def test_ytdlp_extract_transcript_uses_preferred_language(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import vctx.sources.ytdlp_source as module
+
+    en_file = tmp_path / "en.vtt"
+    zh_file = tmp_path / "zh.vtt"
+    en_file.write_text(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nEnglish\n", encoding="utf-8"
+    )
+    zh_file.write_text(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nChinese\n", encoding="utf-8"
+    )
+    FakeYoutubeDL.calls = []
+    FakeYoutubeDL.info = {
+        "id": "abc",
+        "language": "en",
+        "subtitles": {
+            "en": [{"ext": "vtt", "url": en_file.as_uri()}],
+            "zh-Hans": [{"ext": "vtt", "url": zh_file.as_uri()}],
+        },
+        "automatic_captions": {},
+    }
+    monkeypatch.setattr(module.yt_dlp, "YoutubeDL", FakeYoutubeDL)
+
+    payload = YtDlpSourceAdapter().extract_transcript(
+        "https://video.example/watch?v=abc",
+        preferred_language="zh-Hans",
+        cache=Cache(root=tmp_path / "cache"),
+    )
+
+    assert "Chinese" in payload.text
+    assert payload.provenance.language == "zh-Hans"
+    assert payload.provenance.method == "official_subtitles"
+
+
+def test_ytdlp_extract_transcript_uses_automatic_caption_when_official_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import vctx.sources.ytdlp_source as module
+
+    auto_file = tmp_path / "auto.vtt"
+    auto_file.write_text(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nAutomatic\n", encoding="utf-8"
+    )
+    FakeYoutubeDL.calls = []
+    FakeYoutubeDL.info = {
+        "id": "abc",
+        "language": "en",
+        "subtitles": {},
+        "automatic_captions": {"en": [{"ext": "vtt", "url": auto_file.as_uri()}]},
+    }
+    monkeypatch.setattr(module.yt_dlp, "YoutubeDL", FakeYoutubeDL)
+
+    payload = YtDlpSourceAdapter().extract_transcript(
+        "https://video.example/watch?v=abc",
+        preferred_language="en",
+        cache=Cache(root=tmp_path / "cache"),
+    )
+
+    assert "Automatic" in payload.text
+    assert payload.provenance.method == "automatic_subtitles"
+    assert payload.provenance.language == "en"
+
+
+def test_ytdlp_extract_transcript_uses_source_language_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import vctx.sources.ytdlp_source as module
+
+    fallback_file = tmp_path / "fallback.vtt"
+    fallback_file.write_text(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nFallback\n", encoding="utf-8"
+    )
+    FakeYoutubeDL.calls = []
+    FakeYoutubeDL.info = {
+        "id": "abc",
+        "language": "en",
+        "subtitles": {"en": [{"ext": "vtt", "url": fallback_file.as_uri()}]},
+        "automatic_captions": {},
+    }
+    monkeypatch.setattr(module.yt_dlp, "YoutubeDL", FakeYoutubeDL)
+
+    payload = YtDlpSourceAdapter().extract_transcript(
+        "https://video.example/watch?v=abc",
+        preferred_language="zh-Hans",
+        cache=Cache(root=tmp_path / "cache"),
+    )
+
+    assert "Fallback" in payload.text
+    assert payload.provenance.language == "en"
+    assert payload.provenance.method == "official_subtitles"
+
 def test_ytdlp_extract_transcript_raises_when_subtitles_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

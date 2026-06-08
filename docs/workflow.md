@@ -288,7 +288,7 @@ Current status:
 | --- | --- | --- |
 | 0 local transcript pack | Implemented and tested | `vctx prepare local.srt --out out` writes full pack. |
 | 1 URL metadata inspection | Implemented and tested with mocked/unit coverage | `vctx metadata URL --json` uses `yt-dlp`. |
-| 2 URL subtitle pack | Implemented in code path, needs real/network fixture strategy | `vctx prepare URL --out out` works when subtitles are available. |
+| 2 URL subtitle pack | Implemented and fixture-tested; optional network smoke available | `vctx prepare URL --out out` writes full pack when subtitles are available. |
 | 3 metadata-only / partial prepare | Implemented and tested | `workflow=metadata` writes metadata-only partial output; missing subtitles produce metadata partial output. |
 | 4 ASR fallback | Missing execution | Route planning exists; media acquisition and ASR adapters do not. |
 | 5 visual/context enrichment | Missing execution | Route planning exists; frame extraction/OCR/VLM records do not. |
@@ -458,21 +458,27 @@ Local transcript files bypass this order and are parsed directly.
 - Preserve timestamps.
 - Continue through the same internal transcript/chunk/render pipeline as Level 0.
 
+### Test strategy
+
+Level 2 is covered by a deterministic mocked-`yt-dlp` fixture test that invokes the real `vctx prepare URL --out OUT` CLI and verifies the full artifact contract. This is the required always-on test because it is stable, fast, and does not depend on public video-site behavior.
+
+Real network verification is optional and manual:
+
+```bash
+VCTX_SMOKE_VIDEO_URL="https://..." uv run python scripts/smoke_url_subtitles.py
+```
+
+Do not put a public video URL into normal tests by default. Captions, rate limits, cookies, geo availability, and extractor behavior change independently of this project.
+
 ### Required behavior when subtitles do not exist
 
 Current behavior:
 
 ```text
-fail clearly with NoTranscriptError before writing partial artifacts
-```
-
-Target behavior from the app/manifest graph:
-
-```text
 write metadata.json + manifest.json with status = partial
 ```
 
-Preferred future manifest shape:
+Manifest warning shape:
 
 ```json
 {

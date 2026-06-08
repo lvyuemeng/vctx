@@ -33,7 +33,10 @@ class TranscriptPayload(BaseModel):
     provenance: TranscriptProvenance
 
     def provenance_label(self) -> str:
-        parts: list[str] = [self.provenance.method]
+        parts: list[str] = []
+        if self.provenance.provider:
+            parts.append(self.provenance.provider)
+        parts.append(self.provenance.method)
         if self.provenance.language:
             parts.append(self.provenance.language)
         parts.append(self.format)
