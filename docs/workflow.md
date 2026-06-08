@@ -19,6 +19,7 @@ As of the current codebase, the implemented product surface is:
 ```text
 vctx prepare   local .srt/.vtt/json transcript -> full context pack
 vctx prepare   video URL with available subtitles -> full context pack
+vctx prepare   --workflow metadata or no subtitles -> metadata-only partial pack
 vctx metadata  local transcript or video URL -> normalized VideoMetadata
 vctx chunk     existing Transcript JSON -> ChunkSet JSON
 vctx render    existing metadata/transcript/chunks JSON -> Markdown
@@ -38,6 +39,9 @@ Implemented:
 - `prepare_context_pack()` orchestrates source detection, metadata extraction, transcript parsing, normalization, chunking, rendering, artifact writing, and manifest writing.
 - Workflow profiles exist: `default`, `transcript`, `visual`, `full`, `metadata`.
 
+- `workflow=metadata` makes `vctx prepare` produce a metadata-only partial pack.
+- Missing-subtitle sources write `metadata.json` + `manifest.json(status=partial)` instead of failing before artifacts.
+
 Missing or incomplete:
 
 - Config layering is not implemented yet:
@@ -48,8 +52,6 @@ Missing or incomplete:
 
   Current behavior is request/default resolution only; `config_path`, project config, user config, and environment-driven provider settings are placeholders.
 
-- `workflow=metadata` does not yet make `vctx prepare` produce a metadata-only partial pack. Use `vctx metadata INPUT --json` for metadata inspection today.
-- No partial-output prepare path exists when subtitles are missing. `prepare` currently fails before writing `metadata.json` + `manifest.json`.
 - `prepare` only records an ASR planning skip for transcript-present flows. It does not invoke ASR fallback when transcript payload is missing.
 - Cleanup, visual context, and chapters are planned in config/transform code, but not executed in the app workflow.
 
@@ -287,7 +289,7 @@ Current status:
 | 0 local transcript pack | Implemented and tested | `vctx prepare local.srt --out out` writes full pack. |
 | 1 URL metadata inspection | Implemented and tested with mocked/unit coverage | `vctx metadata URL --json` uses `yt-dlp`. |
 | 2 URL subtitle pack | Implemented in code path, needs real/network fixture strategy | `vctx prepare URL --out out` works when subtitles are available. |
-| 3 metadata-only / partial prepare | Missing | `workflow=metadata` is resolved but not used by `prepare`. |
+| 3 metadata-only / partial prepare | Implemented and tested | `workflow=metadata` writes metadata-only partial output; missing subtitles produce metadata partial output. |
 | 4 ASR fallback | Missing execution | Route planning exists; media acquisition and ASR adapters do not. |
 | 5 visual/context enrichment | Missing execution | Route planning exists; frame extraction/OCR/VLM records do not. |
 | 6 AI cleanup/chapters | Missing execution | Route planning exists; cleanup/chapter adapters and artifacts do not. |
@@ -498,13 +500,16 @@ video URL or media input without transcript
   -> manifest.json(status=partial)
 ```
 
-This is the next missing workflow to implement because it closes the gap between URL metadata support and full URL subtitle packs.
+This workflow is implemented. It closes the gap between URL metadata support and full URL subtitle packs by producing inspectable partial artifacts instead of failing before output.
 
-### Target command
+### Commands
 
 ```bash
 uv run vctx prepare "https://..." --out ./out/video --workflow metadata
+uv run vctx prepare "https://..." --out ./out/video
 ```
+
+The first command explicitly selects metadata-only output. The second command writes metadata-only partial output when subtitle extraction finds no transcript and ASR execution is unavailable.
 
 ### Required behavior
 
@@ -699,32 +704,27 @@ uv run pytest tests/test_local_prepare.py tests/test_ytdlp_source.py tests/test_
 
 Based on the graph gaps, implement in this order:
 
-1. **Metadata-only / partial prepare**
-   - Wire `workflow=metadata` into `prepare_context_pack()`.
-   - Write `metadata.json` + `manifest.json(status=partial)` when transcript extraction is unavailable.
-   - Add tests for no-transcript URL/source behavior.
-
-2. **Move CLI file writing behind app use cases**
+1. **Move CLI file writing behind app use cases**
    - Add app-level `chunk_existing_transcript()` and `render_existing_artifacts()` result objects.
    - Keep CLI as parse arguments -> call app -> print result paths.
 
-3. **Manifest evidence schema**
+2. **Manifest evidence schema**
    - Add structured evidence to manifest steps.
    - Record route/provider/model/cost/upload/privacy for transform plans.
 
-4. **Source media asset contract**
+3. **Source media asset contract**
    - Add `MediaAsset` and optional `SourceAdapter.extract_media()`.
    - Keep downloads lazy: only when ASR/visual workflows require media.
 
-5. **ASR execution adapter**
+4. **ASR execution adapter**
    - Implement `run_asr()` and one curated default route.
    - Convert ASR output into `TranscriptPayload` / `Transcript` without changing downstream pipeline.
 
-6. **Visual records and rendering**
+5. **Visual records and rendering**
    - Add frame extraction, `VisualRecord`, and renderer support.
    - Keep visual workflows optional and timestamped.
 
-7. **Cleanup and chapters**
+6. **Cleanup and chapters**
    - Implement only after evidence/manifest structure is solid.
    - Preserve raw transcript and timestamps.
 

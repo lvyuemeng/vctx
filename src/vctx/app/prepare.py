@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-from vctx.app.config import PrepareRequest, resolve_config
+from vctx.app.config import PrepareRequest, WorkflowProfile, resolve_config
+from vctx.app.errors import NoTranscriptError
 from vctx.app.result import PrepareResult
 from vctx.chunking.chunker import chunk_transcript
 from vctx.io.cache import build_cache
-from vctx.io.writer import validate_output_policy, write_artifact_bundle, write_manifest
+from vctx.io.json_dump import model_to_json
+from vctx.io.writer import (
+    validate_output_policy,
+    write_artifact,
+    write_artifact_bundle,
+    write_manifest,
+)
+from vctx.models.artifacts import Artifact
 from vctx.models.chunks import ChunkOptions
 from vctx.models.manifest import ManifestBuilder
+from vctx.models.metadata import VideoMetadata
 from vctx.render.bundle import render_artifact_bundle
 from vctx.sources.detect import detect_source_adapter
 from vctx.subtitles.parse import parse_transcript_payload
@@ -28,9 +37,34 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
     metadata = adapter.extract_metadata(request.input)
     manifest.add_step("metadata.extract", "ok")
 
-    payload = adapter.extract_transcript(
-        request.input, preferred_language=resolved.source.preferred_language, cache=cache
-    )
+    if resolved.runtime.workflow == WorkflowProfile.METADATA:
+        manifest.add_step(
+            "transcript.extract",
+            "skipped",
+            "metadata workflow selected",
+        )
+        manifest.warn("metadata workflow selected; transcript pipeline skipped")
+        return _write_metadata_partial_result(request, manifest, metadata)
+
+    try:
+        payload = adapter.extract_transcript(
+            request.input, preferred_language=resolved.source.preferred_language, cache=cache
+        )
+    except NoTranscriptError as exc:
+        manifest.add_step("transcript.extract", "warning", str(exc))
+        asr_plan = plan_asr(
+            resolved.transforms.asr,
+            TransformEnvironment(offline=resolved.runtime.offline),
+            SourceState(has_transcript=False, has_media=False),
+        )
+        manifest.add_step("transform.asr", "warning", asr_plan.reason)
+        manifest.warn(_capitalize_warning(str(exc)))
+        manifest.warn(
+            "Provide a transcript file, install the default ASR extra, "
+            "configure an online fallback, or use metadata-only output."
+        )
+        return _write_metadata_partial_result(request, manifest, metadata)
+
     manifest.add_step("transcript.extract", "ok", payload.provenance_label())
 
     asr_plan = plan_asr(
@@ -71,3 +105,33 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
     write_manifest(request.out_dir, final_manifest)
 
     return PrepareResult(out_dir=request.out_dir, manifest=final_manifest, artifacts=artifact_refs)
+
+
+def _capitalize_warning(message: str) -> str:
+    if not message:
+        return message
+    return message[:1].upper() + message[1:]
+
+
+def _write_metadata_partial_result(
+    request: PrepareRequest,
+    manifest: ManifestBuilder,
+    metadata: VideoMetadata,
+) -> PrepareResult:
+    request.out_dir.mkdir(parents=True, exist_ok=True)
+    artifact_ref = write_artifact(
+        request.out_dir,
+        Artifact(
+            name="metadata.json",
+            kind="metadata",
+            media_type="application/json",
+            content=model_to_json(metadata),
+        ),
+    )
+    final_manifest = manifest.finish(status="partial", artifacts=[artifact_ref])
+    write_manifest(request.out_dir, final_manifest)
+    return PrepareResult(
+        out_dir=request.out_dir,
+        manifest=final_manifest,
+        artifacts=[artifact_ref],
+    )

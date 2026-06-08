@@ -65,10 +65,18 @@ def prepare_command(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(exc.exit_code) from exc
 
-    typer.echo(f"Wrote context pack: {result.out_dir}")
+    if result.manifest.status == "partial":
+        typer.echo(f"Wrote partial context pack: {result.out_dir}")
+    else:
+        typer.echo(f"Wrote context pack: {result.out_dir}")
     typer.echo(f"Manifest: {result.out_dir / 'manifest.json'}")
-    typer.echo(f"Context: {result.out_dir / 'context.md'}")
-    typer.echo(f"Readable: {result.out_dir / 'readable.md'}")
+    artifact_paths = {artifact.path for artifact in result.artifacts}
+    if "metadata.json" in artifact_paths:
+        typer.echo(f"Metadata: {result.out_dir / 'metadata.json'}")
+    if "context.md" in artifact_paths:
+        typer.echo(f"Context: {result.out_dir / 'context.md'}")
+    if "readable.md" in artifact_paths:
+        typer.echo(f"Readable: {result.out_dir / 'readable.md'}")
 
 
 @app.command("metadata")
