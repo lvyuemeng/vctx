@@ -216,8 +216,8 @@ prepare INPUT
        -> route default cleanup
        -> cleaned transcript + transform evidence
   -> if visual-context policy enables visual context:
-       -> infer whether visuals are useful for this source
-       -> choose adaptive acquisition strategy: sparse cover, transcript-aligned, scene-change, fixed interval, or hybrid
+       -> estimate whether visual evidence may reduce transcript uncertainty
+       -> choose evidence-guided acquisition strategy: transcript-aligned anchors, sparse cover, aspect probes, or bounded hybrid
        -> choose extraction intent per selected frame: OCR, visual description, and/or source image capture
        -> route default OCR/frame-description
        -> timestamped visual records + transform evidence

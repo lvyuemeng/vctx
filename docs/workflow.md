@@ -72,7 +72,7 @@ Missing or incomplete:
 - `extract_media()` / `MediaAsset` is implemented for local media files (`.wav`, `.mp3`, `.m4a`, `.mp4`, `.webm`).
 - URL/video download for ASR fallback is implemented through yt-dlp into `runtime.cache_dir/media/yt-dlp`.
 - Frame/media acquisition for explicit visual/full workflow capture is implemented for local/URL media when video media can be acquired.
-- Rich scene-change/frame-anchor acquisition for visual context is not implemented yet.
+- Evidence-guided frame-anchor acquisition for visual context is not implemented yet.
 - Source-access errors are not yet normalized into a richer source error taxonomy beyond existing `VctxError` subclasses.
 
 ### `docs/graph/model-transforms.md`
@@ -323,7 +323,7 @@ Current status:
 | 2 URL subtitle pack | Implemented and fixture-tested; optional network smoke available | `vctx prepare URL --out out` writes full pack when subtitles are available. |
 | 3 metadata-only / partial prepare | Implemented and tested | `workflow=metadata` writes metadata-only partial output; missing subtitles produce metadata partial output. |
 | 4 ASR fallback | Implemented and tested | URL/local media can flow through local faster-whisper or configured OpenAI-compatible ASR; manifest records route evidence. |
-| 5 visual/context enrichment | Configured VLM slice implemented | Explicit visual/full workflows can plan sample+OCR+describe+capture when routes are available, extract PNG frame artifacts, write `visual_records.json`, and render OCR/description/frame refs. Rich frame sampling and free-online discovery remain missing. |
+| 5 visual/context enrichment | Configured VLM slice implemented | Explicit visual/full workflows can plan sample+OCR+describe+capture when routes are available, extract PNG frame artifacts, write `visual_records.json`, and render OCR/description/frame refs. Transcript-anchored/evidence-guided sampling remains missing. |
 | 6 AI cleanup/chapters | Missing execution | Route planning exists; cleanup/chapter adapters and artifacts do not. |
 
 Later levels should be added without breaking earlier levels.
@@ -871,8 +871,8 @@ Purpose:
 
 ```text
 video
-  -> infer whether visual context is useful
-  -> adaptive frame acquisition plan
+  -> use transcript/evidence signals to decide whether visual context may reduce uncertainty
+  -> evidence-guided frame acquisition plan
   -> OCR / visual description / source image capture intents
   -> timestamp-associated visual artifacts
 ```
@@ -888,10 +888,12 @@ uv run vctx prepare "https://..." --out ./out/video --workflow transcript
 
 ### Required behavior
 
-- Visual acquisition planning is pure and side-effect free: infer content class, usefulness, sampling strategy, and extraction intents before downloading/extracting frames.
+- Visual acquisition planning is pure and side-effect free: derive a sampling/evidence recipe before downloading/extracting frames.
+- The sampling objective is maximal information extraction with minimal relative entropy against the transcript-grounded state, not uniform video coverage and not direct visual informativeness detection.
+- Directly deciding whether a video frame is informative from the visual stream alone is treated as a recursive circuit; when timestamps/transcript exist, prefer transcript-anchored hypotheses and use frame extraction as evidence generation across different aspects.
 - Frame extraction and OCR/VLM execution are side-effecting adapter steps.
 - Visual artifacts must be timestamped.
-- Sampling should maximize incremental information, not uniform coverage: combine scene-change/keyframe candidates with transcript-aligned backstops, enforce a minimum interval, and deduplicate near-identical frames.
+- Sampling should combine transcript anchors, aspect-specific probes, minimum intervals, and near-duplicate removal; scene/keyframe signals may be weak evidence, not ground truth.
 - Podcast/audio-first sources should default to no visual enrichment beyond an optional sparse cover frame.
 - Slide/screen lectures should favor OCR plus source-frame capture.
 - Diagrams/formulas should keep source images and use both OCR and visual description because layout/structure matters.

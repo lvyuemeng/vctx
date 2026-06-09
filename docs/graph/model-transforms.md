@@ -522,7 +522,7 @@ class VisualJudgeAdapter(Protocol):
 
 The judge may add `Evidence`; it must not return provider-specific plans. This keeps free/configured LLM/VLM calls optional, inspectable, and replaceable.
 
-Sampling goal: maximize new source information per frame, not uniform frame coverage. Frame extraction should combine visual-change candidates with transcript anchors when useful, enforce a minimum interval, and drop near-duplicates before OCR/VLM calls.
+Sampling goal: maximize source information while minimizing relative entropy against the transcript-grounded state. Do not frame this as direct visual informativeness detection: judging that from the video stream alone is a recursive circuit. Prefer transcript-anchored hypotheses when timestamps exist, then use frame extraction/OCR/VLM as evidence generation across different aspects. Scene/keyframe signals are weak evidence for candidate anchors, not ground truth; bounded sampling should still enforce minimum intervals and near-duplicate removal.
 
 Concrete default stack:
 
