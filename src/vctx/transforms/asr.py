@@ -72,16 +72,23 @@ class FasterWhisperAsrAdapter:
             "device": "auto",
             "compute_type": "default",
         }
-        if self.instance.cache == "disabled":
-            if not _looks_like_local_path(model_id):
-                raise AsrExecutionError(
-                    "cache = disabled requires a local model path for local-faster-whisper; "
-                    "use cache = \"persistent\" to allow managed model download/cache"
-                )
+        if _looks_like_local_path(model_id):
             kwargs["local_files_only"] = True
             return kwargs
+        if self.instance.cache == "disabled":
+            raise AsrExecutionError(
+                "cache = disabled requires a local model path for local-faster-whisper; "
+                "set model to an explicit local path or omit cache for managed persistent cache"
+            )
         model_cache = self.cache_root / "models" / "faster-whisper"
-        model_cache.mkdir(parents=True, exist_ok=True)
+        try:
+            model_cache.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise AsrExecutionError(
+                "ASR model cache is not writable. Free disk space, choose another "
+                "runtime.cache_dir, or set model to an explicit local model path. "
+                f"Cache path: {model_cache}. Original error: {exc}"
+            ) from exc
         kwargs["download_root"] = str(model_cache)
         kwargs["local_files_only"] = self.offline
         return kwargs

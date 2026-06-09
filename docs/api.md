@@ -129,7 +129,11 @@ instance = "local-default"       # names a composable ASR instance
 [instances.asr.local-default]
 type = "local-faster-whisper"
 model_policy = "auto"            # auto | tiny | base | small | medium | large
-cache = "persistent"             # ASR weights live under runtime.cache_dir/models/
+# managed model weights live under runtime.cache_dir/models/
+
+[instances.asr.local-model]
+type = "local-faster-whisper"
+model = "D:/models/faster-whisper-tiny"  # explicit path => no managed cache/download
 
 [instances.asr.openai-whisper]
 type = "openai-compatible-audio"
@@ -160,8 +164,9 @@ Field semantics:
 | `output.formats` | Default render/artifact formats when CLI `--format` is not supplied. |
 | `transforms.asr.instance` | Name of a composable ASR instance from `[instances.asr.<name>]`. Omit for built-in default selection. |
 | `instances.asr.<name>.type` | Capability implementation type. Current planned values: `local-faster-whisper`, `openai-compatible-audio`. |
-| `instances.asr.<name>.model_policy` | Local model-size policy. `auto` inspects hardware/duration/cache and downloads at most one chosen model. |
-| `instances.asr.<name>.cache` | `persistent` stores model weights under `runtime.cache_dir/models/...`; output packs never contain model weights. |
+| `instances.asr.<name>.model_policy` | Local model-size policy for managed-cache instances. `auto` inspects hardware/duration/cache and downloads at most one chosen model. |
+| `instances.asr.<name>.model` | Either a model id such as `tiny`/`base` for managed persistent cache, or an explicit local model path. A local path automatically disables managed cache/download. |
+| `instances.asr.<name>.cache` | Legacy/internal override. Public config should usually omit it; managed cache is the default for model ids, and local paths are local-only automatically. |
 | `instances.asr.<name>.api_key_env` | Environment variable containing a credential. The config stores only the variable name. |
 | `instances.asr.<name>.cost` / `upload` | Positive evidence fields used for manifest/planning. Explicitly choosing a paid/uploading instance means the user selected that instance. |
 

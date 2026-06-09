@@ -82,17 +82,67 @@ def test_faster_whisper_reports_missing_optional_dependency(
         adapter.transcribe(media)
 
 
-def test_cache_disabled_requires_explicit_local_model_path(tmp_path: Path) -> None:
+def test_explicit_local_model_path_disables_managed_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: dict[str, Any] = {}
+
+    class FakeSegment:
+        start = 0.0
+        end = 1.0
+        text = "local path"
+
+    class FakeWhisperModel:
+        def __init__(self, model_id: str, **kwargs: object) -> None:
+            calls["model_id"] = model_id
+            calls["kwargs"] = kwargs
+
+        def transcribe(self, path: str, **kwargs: object) -> tuple[list[FakeSegment], object]:
+            del path, kwargs
+            return [FakeSegment()], object()
+
+    fake_module = types.SimpleNamespace(WhisperModel=FakeWhisperModel)
+    monkeypatch.setattr("importlib.import_module", lambda name: fake_module)
+    model_dir = tmp_path / "models" / "tiny-local"
+    model_dir.mkdir(parents=True)
+    media = _media_asset(tmp_path / "lecture.wav")
+    media.local_path.write_bytes(b"fake audio")
+
+    adapter = FasterWhisperAsrAdapter(
+        instance=AsrInstanceConfig(type="local-faster-whisper", model=str(model_dir)),
+        model_id=str(model_dir),
+        cache_root=tmp_path / "cache",
+        offline=False,
+    )
+
+    adapter.transcribe(media)
+
+    assert calls["model_id"] == str(model_dir)
+    assert calls["kwargs"] == {
+        "compute_type": "default",
+        "device": "auto",
+        "local_files_only": True,
+    }
+
+
+def test_managed_cache_write_failure_is_actionable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fail_mkdir(self: Path, *args: object, **kwargs: object) -> None:
+        del self, args, kwargs
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(Path, "mkdir", fail_mkdir)
     media = _media_asset(tmp_path / "lecture.wav")
     media.local_path.write_bytes(b"fake audio")
     adapter = FasterWhisperAsrAdapter(
-        instance=AsrInstanceConfig(type="local-faster-whisper", model="tiny", cache="disabled"),
+        instance=AsrInstanceConfig(type="local-faster-whisper", model="tiny"),
         model_id="tiny",
         cache_root=tmp_path / "cache",
         offline=False,
     )
 
-    with pytest.raises(AsrExecutionError, match="cache = disabled requires a local model path"):
+    with pytest.raises(AsrExecutionError, match="ASR model cache is not writable"):
         adapter.transcribe(media)
 
 

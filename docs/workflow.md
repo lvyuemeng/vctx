@@ -711,7 +711,11 @@ instance = "openai-whisper"
 [instances.asr.local-default]
 type = "local-faster-whisper"
 model_policy = "auto"
-cache = "persistent"
+# model ids use managed persistent cache under runtime.cache_dir/models/
+
+[instances.asr.local-model]
+type = "local-faster-whisper"
+model = "D:/models/faster-whisper-tiny"  # explicit path => no managed cache/download
 
 [instances.asr.openai-whisper]
 type = "openai-compatible-audio"
@@ -730,6 +734,8 @@ Rules:
 - API keys are referenced by environment variable name, not stored in config.
 - `runtime.env_files` can point at `.env` files for convenient local credential loading.
 - Normal users should not need provider flags; config names a reusable instance.
+- If `model` is an explicit local path, vctx treats the instance as local-only: no managed cache, no model download, and no separate cache flag needed.
+- If managed cache is full or unwritable, the error should suggest freeing space, moving `runtime.cache_dir`, or using an explicit local model path.
 ```
 
 ### Local ASR model storage
@@ -767,6 +773,8 @@ cache/media/...      # temporary/downloaded media assets
 ```
 
 The manifest should record the model id and cache location class, but not dump large model paths unless useful for debugging.
+
+When `model` is a filesystem path, the instance is a local-model instance. In that case vctx does not pass a `download_root`, forces `local_files_only`, and does not require a separate `cache = "disabled"` setting. This avoids mixed config semantics.
 
 ### Local ASR model auto-selection
 

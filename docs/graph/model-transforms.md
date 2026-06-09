@@ -150,9 +150,10 @@ Current ASR execution status:
 ```text
 run_asr exists for local-faster-whisper instance dispatch.
 FasterWhisperAsrAdapter loads faster_whisper.WhisperModel when the optional ASR extra is installed.
-Persistent cache uses runtime.cache_dir/models/faster-whisper.
+Persistent cache uses runtime.cache_dir/models/faster-whisper for model ids.
+Explicit local model paths are local-only automatically: no download_root and local_files_only=true.
 offline=true maps to local_files_only=True so model downloads are blocked.
-cache="disabled" requires model to be a local path, avoiding hidden global model downloads.
+Managed-cache creation/download failures are wrapped as actionable AsrExecutionError messages that suggest freeing cache space, moving runtime.cache_dir, or using an explicit local model path.
 ```
 
 ```text
