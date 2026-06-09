@@ -13,15 +13,17 @@ from vctx.models.transcript import TranscriptPayload, TranscriptProvenance
 runner = CliRunner()
 
 
-def test_prepare_visual_workflow_writes_capture_records_and_frame_refs(
+def test_prepare_visual_workflow_runs_available_local_ocr(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     import vctx.transforms.asr as asr_module
     import vctx.transforms.visual_frames as visual_frames_module
+    import vctx.transforms.visual_ocr as visual_ocr_module
+    import vctx.transforms.visual_routes as visual_routes_module
     from vctx.models.visual import FrameAsset
     from vctx.transforms.visual_planning import Evidence
 
-    media = tmp_path / "lecture.mp4"
+    media = tmp_path / "slides.mp4"
     media.write_bytes(b"fake mp4 bytes")
     config = tmp_path / "vctx.toml"
     config.write_text(
@@ -41,7 +43,7 @@ cache = "persistent"
     def fake_transcribe(self: object, media_asset: object) -> TranscriptPayload:
         del self, media_asset
         return TranscriptPayload(
-            text="WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nA lecture with slides.\n",
+            text="WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nLook at the slide text.\n",
             format="vtt",
             provenance=TranscriptProvenance(
                 method="asr",
@@ -70,8 +72,17 @@ cache = "persistent"
             )
         ]
 
+    def fake_rapidocr_available() -> bool:
+        return True
+
+    def fake_extract_text(self: object, frame: FrameAsset) -> str:
+        del self, frame
+        return "CAP theorem slide"
+
     monkeypatch.setattr(asr_module.FasterWhisperAsrAdapter, "transcribe", fake_transcribe)
     monkeypatch.setattr(visual_frames_module, "extract_frames", fake_extract_frames)
+    monkeypatch.setattr(visual_routes_module, "rapidocr_available", fake_rapidocr_available)
+    monkeypatch.setattr(visual_ocr_module.RapidOcrAdapter, "extract_text", fake_extract_text)
 
     result = runner.invoke(
         app,
@@ -88,37 +99,37 @@ cache = "persistent"
     )
 
     assert result.exit_code == 0, result.output
-    assert (out_dir / "visual_records.json").exists()
-    assert (out_dir / "visual" / "frames" / "frame-0001.png").exists()
-
     visual_records = json.loads(
         (out_dir / "visual_records.json").read_text(encoding="utf-8")
     )
-    assert visual_records["records"][0]["kind"] == "capture"
-    assert visual_records["records"][0]["artifact_path"] == "visual/frames/frame-0001.png"
+    assert [record["kind"] for record in visual_records["records"]] == ["ocr", "capture"]
+    assert visual_records["records"][0]["text"] == "CAP theorem slide"
 
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["status"] == "ok"
     assert _step_status(manifest, "transform.visual_plan") == "ok"
+    assert _step_detail(manifest, "transform.visual_plan") == "local OCR: rapidocr-onnxruntime"
     assert _step_status(manifest, "transform.visual_capture") == "ok"
-    assert {artifact["path"] for artifact in manifest["artifacts"]} >= {
-        "visual_records.json",
-        "visual/frames/frame-0001.png",
-    }
 
     context = (out_dir / "context.md").read_text(encoding="utf-8")
-    assert "## Visual records" in context
-    assert "visual/frames/frame-0001.png" in context
+    assert "ocr: CAP theorem slide" in context
 
 
 def _step_status(manifest: dict[str, Any], name: str) -> str:
+    return _step_value(manifest, name, "status")
+
+
+def _step_detail(manifest: dict[str, Any], name: str) -> str:
+    return _step_value(manifest, name, "detail")
+
+
+def _step_value(manifest: dict[str, Any], name: str, key: str) -> str:
     steps = manifest["steps"]
     assert isinstance(steps, list)
     for raw_step in steps:
         assert isinstance(raw_step, dict)
         step = cast(dict[str, Any], raw_step)
         if step["name"] == name:
-            status = step["status"]
-            assert isinstance(status, str)
-            return status
+            value = step[key]
+            assert isinstance(value, str)
+            return value
     raise AssertionError(f"missing manifest step: {name}")

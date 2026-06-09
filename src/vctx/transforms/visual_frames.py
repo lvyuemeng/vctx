@@ -25,7 +25,7 @@ def extract_frames(
 
 def _extract_cover_frame(media_asset: MediaAsset, frames_dir: Path) -> FrameAsset:
     timestamp = _cover_timestamp(media_asset.duration_seconds)
-    frame_path = frames_dir / "frame-0001.jpg"
+    frame_path = frames_dir / "frame-0001.png"
     command = [
         "ffmpeg",
         "-y",
@@ -35,8 +35,6 @@ def _extract_cover_frame(media_asset: MediaAsset, frames_dir: Path) -> FrameAsse
         str(media_asset.local_path),
         "-frames:v",
         "1",
-        "-q:v",
-        "3",
         str(frame_path),
     ]
     try:

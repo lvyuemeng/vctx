@@ -22,6 +22,9 @@ vctx = "vctx:main"
 asr = [
     "faster-whisper>=1.2.1",
 ]
+visual = [
+    "rapidocr-onnxruntime>=1.4.4",
+]
 
 [build-system]
 requires = ["hatchling"]

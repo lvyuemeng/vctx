@@ -32,7 +32,12 @@ from vctx.transcript.normalize import normalize_transcript
 from vctx.transforms.asr import AsrExecutionError, run_asr
 from vctx.transforms.planning import SourceState, TransformEnvironment, plan_asr
 from vctx.transforms.visual_execute import VisualExecutionError, run_visual_context
-from vctx.transforms.visual_planning import VisualSourceSignals, plan_visual_acquisition
+from vctx.transforms.visual_planning import (
+    VisualAssessment,
+    VisualSourceSignals,
+    plan_visual_acquisition,
+)
+from vctx.transforms.visual_routes import discover_visual_operations
 from vctx.util.versions import vctx_version
 
 
@@ -195,9 +200,10 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
                     title=metadata.title,
                     description=None,
                     transcript_timestamps=bool(clean.segments),
+                    operations=discover_visual_operations(resolved.transforms.visual_context),
                 )
             )
-            manifest.add_step("transform.visual_plan", "ok", assessment.rationale)
+            manifest.add_step("transform.visual_plan", "ok", _visual_plan_detail(assessment))
             try:
                 visual_records = run_visual_context(assessment, media_asset, request.out_dir)
             except VisualExecutionError as visual_exc:
@@ -268,10 +274,29 @@ def _visual_frame_refs(visual_records: VisualRecordSet) -> list[ArtifactRef]:
             ArtifactRef(
                 kind="visual_frame",
                 path=record.artifact_path,
-                media_type="image/jpeg",
+                media_type=_visual_frame_media_type(record.artifact_path),
             )
         )
     return refs
+
+
+def _visual_frame_media_type(path: str) -> str:
+    if path.lower().endswith(".png"):
+        return "image/png"
+    if path.lower().endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    return "application/octet-stream"
+
+
+def _visual_plan_detail(assessment: VisualAssessment) -> str:
+    route_details = []
+    for action in assessment.recipe:
+        provider_id = action.params.get("provider_id")
+        if action.name == "ocr" and provider_id is not None:
+            route_details.append(f"local OCR: {provider_id}")
+    if route_details:
+        return "; ".join(route_details)
+    return assessment.rationale
 
 
 def _capitalize_warning(message: str) -> str:

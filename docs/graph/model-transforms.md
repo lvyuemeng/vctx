@@ -428,11 +428,13 @@ VisualAssessment(
 )
 ```
 
-Visual execution APIs consume the already-shaped recipe rather than re-inferring source class or checking for missing adapters. The sample+capture slice is implemented in:
+Visual execution APIs consume the already-shaped recipe rather than re-inferring source class or checking for missing adapters. The sample+capture+local OCR slice is implemented in:
 
 ```text
 src/vctx/models/visual.py
 src/vctx/transforms/visual_frames.py
+src/vctx/transforms/visual_ocr.py
+src/vctx/transforms/visual_routes.py
 src/vctx/transforms/visual_execute.py
 ```
 
@@ -459,6 +461,9 @@ class VisualRecordSet(BaseModel):
     records: list[VisualRecord] = []
 
 
+def discover_visual_operations(policy: CapabilityPolicy) -> list[VisualOperation]
+
+
 def extract_frames(
     media_asset: MediaAsset,
     sample_action: AcquisitionAction,
@@ -473,13 +478,9 @@ def run_visual_context(
 ) -> VisualRecordSet
 ```
 
-Planned route-discovery/probe APIs:
+Planned probe APIs:
 
 ```python
-def discover_visual_operations(policy, environment) -> list[VisualOperation]:
-    """Return only operations executable in this run."""
-
-
 def make_visual_probe_plan(metadata, transcript) -> list[AcquisitionAction]
 ```
 
@@ -495,8 +496,9 @@ discover_visual_operations(...)
 plan_visual_acquisition(VisualSourceSignals(..., operations=ops))
   -> recipe contains only executable actions
 
-run_visual_context(assessment, frames, cache)
+run_visual_context(assessment, media_asset, out_dir)
   -> executes every action in recipe
+  -> writes canonical frame artifacts as PNG for OCR/capture consistency
   -> no "describe skipped because VLM missing" branch
   -> no "ocr skipped because rapidocr missing" branch
 ```
@@ -518,7 +520,7 @@ Concrete default stack:
 
 ```text
 local OCR adapter: rapidocr-onnxruntime
-frame utilities: pillow; opencv-python-headless only when needed
+frame extraction: ffmpeg canonical PNG output; pillow utilities later; opencv-python-headless only when needed
 local VLM adapter: none by default
 free-online VLM/OCR: preferred when stable and materially better
 configured-online VLM/OCR: plain HTTP adapter when configured
@@ -589,7 +591,7 @@ Example configured-online visual evidence:
   "uploaded": true,
   "cost_may_apply": true,
   "deterministic": false,
-  "source_artifacts": ["frames/frame_001.jpg"],
+  "source_artifacts": ["visual/frames/frame-0001.png"],
   "output_artifacts": ["visual_records.json"],
   "warnings": ["Visual descriptions are generated model output, not source text."]
 }
