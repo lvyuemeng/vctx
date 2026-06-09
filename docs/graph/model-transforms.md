@@ -432,6 +432,7 @@ Visual execution APIs consume the already-shaped recipe rather than re-inferring
 
 ```text
 src/vctx/models/visual.py
+src/vctx/transforms/visual_cases.py
 src/vctx/transforms/visual_frames.py
 src/vctx/transforms/model_resolution.py
 src/vctx/transforms/visual_ocr.py
@@ -468,6 +469,14 @@ def discover_visual_operations(
     *,
     vision_providers: dict[str, ProviderConfig] | None = None,
 ) -> list[VisualOperation]
+
+
+def deterministic_essential_cases(transcript: Transcript) -> list[EssentialVisualCase]
+
+
+def dedupe_cases_by_window(
+    cases: list[EssentialVisualCase], *, min_gap_s: float, budget: int
+) -> list[EssentialVisualCase]
 
 
 def resolve_model_ref(
@@ -538,7 +547,7 @@ class VisualJudgeAdapter(Protocol):
 
 The judge may add `Evidence`; it must not return provider-specific plans. This keeps free/configured LLM/VLM calls optional, inspectable, and replaceable.
 
-Sampling goal: maximize source information while minimizing relative entropy against the transcript-grounded state. Do not frame this as direct visual informativeness detection: judging that from the video stream alone is a recursive circuit. Prefer transcript-anchored hypotheses when timestamps exist, then use frame extraction/OCR/VLM as evidence generation across different aspects. Scene/keyframe signals are weak evidence for candidate anchors, not ground truth; bounded sampling should still enforce minimum intervals and near-duplicate removal.
+Sampling goal: maximize source information while minimizing relative entropy against the transcript-grounded state. Do not frame this as direct visual informativeness detection: judging that from the video stream alone is a recursive circuit. Prefer transcript-anchored hypotheses when timestamps exist, then use frame extraction/OCR/VLM as evidence generation across different aspects. Deterministic transcript cues now produce typed `EssentialVisualCase` anchors with simple time-window dedup before frame extraction. Scene/keyframe signals are weak evidence for candidate anchors, not ground truth; bounded sampling should still enforce minimum intervals and near-duplicate removal.
 
 Concrete default stack:
 

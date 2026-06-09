@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from vctx.transforms.visual_cases import EssentialVisualCase, dedupe_cases_by_window
+
 EvidenceKind = Literal["metadata", "transcript", "frame", "probe"]
 ActionName = Literal["sample", "ocr", "describe", "capture"]
 OperationRoute = Literal["deterministic", "local", "free-online", "configured-online"]
@@ -38,6 +40,7 @@ class VisualSourceSignals(BaseModel):
     transcript_timestamps: bool = False
     operations: list[VisualOperation] = Field(default_factory=baseline_visual_operations)
     evidence: list[Evidence] = Field(default_factory=list)
+    essential_cases: list[EssentialVisualCase] = Field(default_factory=list)
 
 
 class AcquisitionAction(BaseModel):
@@ -124,8 +127,29 @@ def _with_textual_evidence(signals: VisualSourceSignals) -> list[Evidence]:
         derived.append(("diagram-reference", 0.7))
     if any(token in text for token in ("formula", "equation", "proof", "derivation")):
         derived.append(("formula-reference", 0.7))
+    derived.extend(_essential_case_evidence(signals.essential_cases))
     evidence.extend(Evidence(kind="metadata", name=name, weight=weight) for name, weight in derived)
     return evidence
+
+
+def _essential_case_evidence(cases: list[EssentialVisualCase]) -> list[tuple[str, float]]:
+    derived: list[tuple[str, float]] = []
+    for case in cases:
+        if case.case_type == "diagram":
+            derived.append(("diagram-reference", case.priority))
+        elif case.case_type == "formula":
+            derived.append(("formula-reference", case.priority))
+            derived.append(("layout-heavy", min(case.priority, 0.7)))
+            derived.append(("dense-text", min(case.priority, 0.6)))
+        elif case.case_type in {"screen_demo", "code"}:
+            derived.append(("screen-content", case.priority))
+            derived.append(("dense-text", min(case.priority, 0.6)))
+        elif case.case_type == "table":
+            derived.append(("dense-text", case.priority))
+            derived.append(("layout-heavy", min(case.priority, 0.6)))
+        else:
+            derived.append(("visual-reference", case.priority))
+    return derived
 
 
 def _audio_sufficiency(evidence: list[Evidence]) -> float:
@@ -165,7 +189,30 @@ def _visual_yield(evidence: list[Evidence], audio_sufficiency: float) -> float:
 
 def _sample_params(
     signals: VisualSourceSignals, evidence: list[Evidence]
-) -> dict[str, int | float | str]:
+) -> dict[str, Any]:
+    if signals.essential_cases:
+        min_gap = 5 if _score(evidence, {"layout-heavy", "formula-reference"}) > 0 else 8
+        budget = min(
+            len(signals.essential_cases),
+            _target_frames(
+                signals.duration_seconds,
+                seconds_per_frame=60,
+                minimum=1,
+                maximum=80,
+            ),
+        )
+        cases = dedupe_cases_by_window(
+            signals.essential_cases,
+            min_gap_s=float(min_gap),
+            budget=budget,
+        )
+        return {
+            "strategy": "essential_cases",
+            "budget": len(cases),
+            "min_gap_s": min_gap,
+            "cases": [case.model_dump() for case in cases],
+        }
+
     strategy = "changes+anchors" if signals.transcript_timestamps else "changes"
     min_gap = 5 if _score(evidence, {"layout-heavy", "formula-reference"}) > 0 else 8
     seconds_per_frame = 60 if min_gap == 5 else 90

@@ -31,6 +31,7 @@ from vctx.subtitles.parse import parse_transcript_payload
 from vctx.transcript.normalize import normalize_transcript
 from vctx.transforms.asr import AsrExecutionError, run_asr
 from vctx.transforms.planning import SourceState, TransformEnvironment, plan_asr
+from vctx.transforms.visual_cases import deterministic_essential_cases
 from vctx.transforms.visual_execute import VisualExecutionError, run_visual_context
 from vctx.transforms.visual_planning import (
     VisualAssessment,
@@ -200,6 +201,7 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
                     title=metadata.title,
                     description=None,
                     transcript_timestamps=bool(clean.segments),
+                    essential_cases=deterministic_essential_cases(clean),
                     operations=discover_visual_operations(
                         resolved.transforms.visual_context,
                         vision_providers=resolved.providers.vision,
