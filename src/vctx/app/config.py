@@ -126,6 +126,18 @@ class InstanceRegistry(BaseModel):
     asr: dict[str, AsrInstanceConfig] = Field(default_factory=dict)
 
 
+class ConfigPathContext(BaseModel):
+    base_dir: Path | None = None
+
+    def resolve_config_path(self, value: Path) -> Path:
+        if value.is_absolute() or self.base_dir is None:
+            return value
+        return self.base_dir / value
+
+    def resolve_config_paths(self, values: list[Path]) -> list[Path]:
+        return [self.resolve_config_path(value) for value in values]
+
+
 class ResolvedConfig(BaseModel):
     runtime: RuntimeConfig
     source: SourceConfig
@@ -227,17 +239,35 @@ def _resolve_provider_registry(config: dict[str, Any]) -> ProviderRegistry:
     return ProviderRegistry.model_validate(registry)
 
 
-def _resolve_instance_registry(config: dict[str, Any]) -> InstanceRegistry:
+def _resolve_instance_registry(
+    config: dict[str, Any], paths: ConfigPathContext
+) -> InstanceRegistry:
     instances = _section(config, "instances")
     asr_table = instances.get("asr", {})
     if not isinstance(asr_table, dict):
         return InstanceRegistry()
     return InstanceRegistry(
         asr={
-            name: AsrInstanceConfig.model_validate(raw_instance)
+            name: _resolve_asr_instance_paths(AsrInstanceConfig.model_validate(raw_instance), paths)
             for name, raw_instance in asr_table.items()
             if isinstance(raw_instance, dict)
         }
+    )
+
+
+def _resolve_asr_instance_paths(
+    instance: AsrInstanceConfig, paths: ConfigPathContext
+) -> AsrInstanceConfig:
+    if instance.model is None or not _looks_like_path_value(instance.model):
+        return instance
+    resolved_model = paths.resolve_config_path(Path(instance.model))
+    return instance.model_copy(update={"model": str(resolved_model)})
+
+
+def _looks_like_path_value(value: str) -> bool:
+    path = Path(value)
+    return path.is_absolute() or value.startswith(".") or any(
+        separator in value for separator in ("/", "\\")
     )
 
 
@@ -276,6 +306,9 @@ def resolve_config(request: PrepareRequest) -> ResolvedConfig:
     """Resolve user request/config omissions into concrete default/auto policy."""
 
     config = _read_config(request.config_path)
+    path_context = ConfigPathContext(
+        base_dir=request.config_path.parent if request.config_path is not None else None
+    )
     runtime = _section(config, "runtime")
     source = _section(config, "source")
     output = _section(config, "output")
@@ -292,7 +325,11 @@ def resolve_config(request: PrepareRequest) -> ResolvedConfig:
     cache_dir = request.cache_dir
     if cache_dir is None:
         configured_cache = _config_value(runtime, "cache_dir", None)
-        cache_dir = Path(configured_cache) if configured_cache is not None else _default_cache_dir()
+        cache_dir = (
+            path_context.resolve_config_path(Path(configured_cache))
+            if configured_cache is not None
+            else _default_cache_dir()
+        )
 
     preferred_language = request.language
     if preferred_language is None:
@@ -308,7 +345,9 @@ def resolve_config(request: PrepareRequest) -> ResolvedConfig:
             keep_temp=request.keep_temp or bool(_config_value(runtime, "keep_temp", False)),
             offline=offline,
             workflow=workflow,
-            env_files=_paths(_config_value(runtime, "env_files", [])),
+            env_files=path_context.resolve_config_paths(
+                _paths(_config_value(runtime, "env_files", []))
+            ),
         ),
         source=SourceConfig(
             preferred_language=preferred_language,
@@ -331,5 +370,5 @@ def resolve_config(request: PrepareRequest) -> ResolvedConfig:
             chunk_max_seconds=_config_value(output, "chunk_max_seconds", request.chunk_max_seconds),
         ),
         providers=_resolve_provider_registry(config),
-        instances=_resolve_instance_registry(config),
+        instances=_resolve_instance_registry(config, path_context),
     )

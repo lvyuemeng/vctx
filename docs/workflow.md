@@ -55,8 +55,7 @@ Missing or incomplete:
 
   Project config discovery, user config discovery, and environment-derived provider availability are not implemented yet.
 
-- `prepare` only records an ASR planning skip for transcript-present flows. It does not invoke ASR fallback when transcript payload is missing.
-- Cleanup, visual context, and chapters are planned in config/transform code, but not executed in the app workflow.
+- Cleanup, visual context execution, and chapters are planned in config/transform code, but not executed in the app workflow.
 
 ### `docs/graph/sources.md`
 
@@ -117,11 +116,8 @@ Missing or incomplete:
 - Concrete adapters are missing:
 
   ```text
-  local_asr / faster-whisper
   local_ocr
-  free_online_asr
   free_online_vision
-  configured_online_asr
   configured_online_vision
   configured/free text cleanup
   chapter suggestion
@@ -307,8 +303,8 @@ Current status:
 | 1 URL metadata inspection | Implemented and tested with mocked/unit coverage | `vctx metadata URL --json` uses `yt-dlp`. |
 | 2 URL subtitle pack | Implemented and fixture-tested; optional network smoke available | `vctx prepare URL --out out` writes full pack when subtitles are available. |
 | 3 metadata-only / partial prepare | Implemented and tested | `workflow=metadata` writes metadata-only partial output; missing subtitles produce metadata partial output. |
-| 4 ASR fallback | Missing execution | Route planning exists; media acquisition and ASR adapters do not. |
-| 5 visual/context enrichment | Missing execution | Route planning exists; frame extraction/OCR/VLM records do not. |
+| 4 ASR fallback | Implemented and tested | URL/local media can flow through local faster-whisper or configured OpenAI-compatible ASR; manifest records route evidence. |
+| 5 visual/context enrichment | Planning partially implemented | Route planning and visual acquisition strategy exist; frame extraction/OCR/VLM records do not. |
 | 6 AI cleanup/chapters | Missing execution | Route planning exists; cleanup/chapter adapters and artifacts do not. |
 
 Later levels should be added without breaking earlier levels.
@@ -856,11 +852,13 @@ Purpose:
 
 ```text
 video
-  -> representative frames or OCR
+  -> infer whether visual context is useful
+  -> adaptive frame acquisition plan
+  -> OCR / visual description / source image capture intents
   -> timestamp-associated visual artifacts
 ```
 
-This level is optional. It should not block transcript-centric workflows.
+This level is optional. It should not block transcript-centric workflows, and it should not spend OCR/VLM budget on podcast-like videos whose useful information is already in the audio/transcript.
 
 ### Target command examples
 
@@ -871,8 +869,14 @@ uv run vctx prepare "https://..." --out ./out/video --workflow transcript
 
 ### Required behavior
 
-- Frame extraction and OCR are side-effecting adapter steps.
+- Visual acquisition planning is pure and side-effect free: infer content class, usefulness, sampling strategy, and extraction intents before downloading/extracting frames.
+- Frame extraction and OCR/VLM execution are side-effecting adapter steps.
 - Visual artifacts must be timestamped.
+- Sampling should maximize incremental information, not uniform coverage: combine scene-change/keyframe candidates with transcript-aligned backstops, enforce a minimum interval, and deduplicate near-identical frames.
+- Podcast/audio-first sources should default to no visual enrichment beyond an optional sparse cover frame.
+- Slide/screen lectures should favor OCR plus source-frame capture.
+- Diagrams/formulas should keep source images and use both OCR and visual description because layout/structure matters.
+- Scenery/low-text visual sources should favor sparse visual descriptions plus source-frame capture.
 - `readable.md` may reference frames.
 - `context.md` may reference frames in a machine-readable way.
 - Do not make screenshots a knowledge base.
@@ -982,29 +986,14 @@ uv run pytest tests/test_local_prepare.py tests/test_ytdlp_source.py tests/test_
 
 ## Recommended next implementation order
 
-Based on the graph gaps, implement in this order:
+Based on the remaining graph gaps, implement in this order:
 
-1. **Move CLI file writing behind app use cases**
-   - Add app-level `chunk_existing_transcript()` and `render_existing_artifacts()` result objects.
-   - Keep CLI as parse arguments -> call app -> print result paths.
-
-2. **Manifest evidence schema**
-   - Add structured evidence to manifest steps.
-   - Record route/provider/model/cost/upload/privacy for transform plans.
-
-3. **Source media asset contract**
-   - Add `MediaAsset` and optional `SourceAdapter.extract_media()`.
-   - Keep downloads lazy: only when ASR/visual workflows require media.
-
-4. **ASR execution adapter**
-   - Implement `run_asr()` and one curated default route.
-   - Convert ASR output into `TranscriptPayload` / `Transcript` without changing downstream pipeline.
-
-5. **Visual records and rendering**
+1. **Visual records and rendering**
    - Add frame extraction, `VisualRecord`, and renderer support.
+   - Use `VisualAcquisitionPlan` before side-effecting frame extraction.
    - Keep visual workflows optional and timestamped.
 
-6. **Cleanup and chapters**
+2. **Cleanup and chapters**
    - Implement only after evidence/manifest structure is solid.
    - Preserve raw transcript and timestamps.
 

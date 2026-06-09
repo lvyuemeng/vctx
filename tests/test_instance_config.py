@@ -26,7 +26,7 @@ instance = "local-default"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"
-model_policy = "auto"
+model = "models/faster-whisper-tiny"
 cache = "persistent"
 
 [instances.asr.openai-whisper]
@@ -44,9 +44,12 @@ upload = "required"
         PrepareRequest(input="lecture.mp4", out_dir=tmp_path / "out", config_path=config_path)
     )
 
-    assert resolved.runtime.env_files == [Path(".env")]
+    assert resolved.runtime.env_files == [tmp_path / ".env"]
     assert resolved.transforms.asr.instance == "local-default"
     assert resolved.instances.asr["local-default"].type == "local-faster-whisper"
+    assert resolved.instances.asr["local-default"].model == str(
+        tmp_path / "models" / "faster-whisper-tiny"
+    )
     assert resolved.instances.asr["local-default"].cache == "persistent"
     assert resolved.instances.asr["openai-whisper"].type == "openai-compatible-audio"
     assert resolved.instances.asr["openai-whisper"].api_key_env == "OPENAI_API_KEY"

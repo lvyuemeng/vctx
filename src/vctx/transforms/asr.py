@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import importlib
-import json
 import mimetypes
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 from urllib.request import Request, urlopen
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from vctx.app.config import AsrInstanceConfig
 from vctx.models.media import MediaAsset
@@ -23,6 +24,21 @@ class WhisperSegment(Protocol):
     start: float
     end: float
     text: str
+
+
+class OpenAiAsrSegment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    start: float
+    end: float
+    text: str
+
+
+class OpenAiAsrResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    text: str | None = None
+    segments: list[OpenAiAsrSegment] = Field(default_factory=list)
 
 
 class FasterWhisperAsrAdapter:
@@ -139,8 +155,8 @@ class OpenAiCompatibleAsrAdapter:
         except Exception as exc:
             raise AsrExecutionError(f"online ASR request failed: {exc}") from exc
         try:
-            payload = json.loads(raw_payload.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            payload = OpenAiAsrResponse.model_validate_json(raw_payload)
+        except ValueError as exc:
             raise AsrExecutionError("online ASR returned invalid JSON") from exc
         return TranscriptPayload(
             text=_openai_response_to_vtt(payload),
@@ -187,40 +203,12 @@ def run_asr(
     raise AsrExecutionError(f"ASR plan is not executable: {plan.selected}")
 
 
-def _openai_response_to_vtt(payload: object) -> str:
-    if not isinstance(payload, dict):
-        raise AsrExecutionError("online ASR returned a non-object JSON payload")
-    response = cast(dict[str, object], payload)
-    segments = response.get("segments")
-    if isinstance(segments, list) and segments:
-        return _segments_to_vtt(_json_segments(cast(list[object], segments)))
-    text = response.get("text")
-    if isinstance(text, str) and text.strip():
-        return "WEBVTT\n\n00:00:00.000 --> 00:00:00.001\n" + text.strip() + "\n"
+def _openai_response_to_vtt(payload: OpenAiAsrResponse) -> str:
+    if payload.segments:
+        return _segments_to_vtt(payload.segments)
+    if payload.text and payload.text.strip():
+        return "WEBVTT\n\n00:00:00.000 --> 00:00:00.001\n" + payload.text.strip() + "\n"
     raise AsrExecutionError("online ASR returned no transcript text")
-
-
-def _json_segments(values: list[object]) -> Iterable[WhisperSegment]:
-    class JsonSegment:
-        def __init__(self, start: float, end: float, text: str) -> None:
-            self.start = start
-            self.end = end
-            self.text = text
-
-    for value in values:
-        if not isinstance(value, dict):
-            continue
-        segment = cast(dict[str, object], value)
-        start = segment.get("start")
-        end = segment.get("end")
-        text = segment.get("text")
-        valid_segment = (
-            isinstance(start, int | float)
-            and isinstance(end, int | float)
-            and isinstance(text, str)
-        )
-        if valid_segment:
-            yield JsonSegment(float(start), float(end), text)
 
 
 def _multipart_audio_payload(path: Path, *, model: str) -> tuple[bytes, str]:

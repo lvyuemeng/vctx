@@ -48,7 +48,7 @@ cost_mode = "paid"
     )
 
     assert resolved.runtime.workflow == WorkflowProfile.TRANSCRIPT
-    assert resolved.runtime.cache_dir == Path(".cache/vctx")
+    assert resolved.runtime.cache_dir == tmp_path / ".cache" / "vctx"
     assert resolved.runtime.keep_temp is True
     assert resolved.source.preferred_language == "en"
     assert resolved.source.subtitle_fallback_order == ["manual", "automatic"]

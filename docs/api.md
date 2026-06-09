@@ -109,7 +109,7 @@ Preferred example:
 ```toml
 [runtime]
 workflow = "transcript"          # default | transcript | visual | full | metadata
-cache_dir = ".cache/vctx"        # optional; default is platform user cache dir
+cache_dir = ".cache/vctx"        # optional; relative paths resolve from this config file
 env_files = [".env"]             # optional; loaded only for provider credentials
 keep_temp = false
 
@@ -156,8 +156,8 @@ Field semantics:
 | Field | Semantics |
 | --- | --- |
 | `runtime.workflow` | Default workflow profile when CLI `--workflow` is not supplied. |
-| `runtime.cache_dir` | Persistent tool cache. Defaults to the platform user cache directory, e.g. Windows `C:\\Users\\<user>\\AppData\\Local\\vctx\\Cache`. |
-| `runtime.env_files` | Optional dotenv files to consult during credential resolution. Secrets are not copied into manifests/config dumps. |
+| `runtime.cache_dir` | Persistent tool cache. Defaults to the platform user cache directory, e.g. Windows `C:\\Users\\<user>\\AppData\\Local\\vctx\\Cache`. Relative config values resolve from the config file directory; CLI `--cache-dir` values stay relative to the caller CWD. |
+| `runtime.env_files` | Optional dotenv files to consult during credential resolution. Relative config values resolve from the config file directory. Secrets are not copied into manifests/config dumps. |
 | `source.preferred_language` | Default subtitle/ASR language hint; CLI `--language` overrides. |
 | `source.subtitle_fallback_order` | Source adapter policy for official/manual subtitles, automatic captions, and fallback language. |
 | `source.media_download_policy` | `auto` allows media acquisition only when a selected workflow needs it; `never` blocks media downloads. |
@@ -202,7 +202,9 @@ prepare INPUT
        -> route default cleanup
        -> cleaned transcript + transform evidence
   -> if visual-context policy enables visual context:
-       -> sample frames
+       -> infer whether visuals are useful for this source
+       -> choose adaptive acquisition strategy: sparse cover, transcript-aligned, scene-change, fixed interval, or hybrid
+       -> choose extraction intent per selected frame: OCR, visual description, and/or source image capture
        -> route default OCR/frame-description
        -> timestamped visual records + transform evidence
   -> if chapter policy enables chapters:
