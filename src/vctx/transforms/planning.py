@@ -142,7 +142,7 @@ def plan_asr(
             capability="asr",
             selected="local",
             provider_id="faster-whisper",
-            model_id="small/base",
+            model_id=policy.model or environment.configured_asr_model_id or "base",
             reason="default local ASR route available",
         )
     if _online_allowed(policy, environment) and environment.free_online_asr:

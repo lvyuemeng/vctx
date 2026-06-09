@@ -100,6 +100,21 @@ def test_prepare_help_uses_decisive_flags_without_negation_pairs() -> None:
     assert "--no-chapters" not in result.output
 
 
+def test_plan_asr_records_selected_local_model_id(tmp_path: Path) -> None:
+    request = PrepareRequest(input="lecture.wav", out_dir=tmp_path / "out")
+    resolved = resolve_config(request)
+    policy = resolved.transforms.asr.model_copy(update={"model": "tiny"})
+    environment = TransformEnvironment(installed_asr=True, configured_asr_model_id="tiny")
+    source = SourceState(has_transcript=False, has_media=True)
+
+    plan = plan_asr(policy, environment, source)
+
+    assert plan.selected == "local"
+    assert plan.provider_id == "faster-whisper"
+    assert plan.model_id == "tiny"
+    assert plan.evidence_seed.model_id == "tiny"
+
+
 def test_plan_asr_uses_configured_provider_identity(tmp_path: Path) -> None:
     request = PrepareRequest(input="lecture.mp4", out_dir=tmp_path / "out")
     resolved = resolve_config(request)

@@ -26,7 +26,7 @@ vctx render    existing metadata/transcript/chunks JSON -> Markdown
 vctx doctor    local environment report
 ```
 
-The current implementation is strongest for deterministic transcript/subtitle workflows. It has config resolution and transform route planning, but most model-mediated execution paths in `docs/graph/model-transforms.md` are not implemented yet.
+The current implementation is strongest for deterministic transcript/subtitle workflows and ASR fallback. It has config resolution, transform route planning, local faster-whisper ASR, configured OpenAI-compatible ASR, URL media download for ASR, and transform evidence in manifests. Visual/OCR/cleanup/chapter model-mediated execution paths in `docs/graph/model-transforms.md` remain mostly planned.
 
 ## Missing functionality by graph module
 
@@ -71,7 +71,7 @@ Implemented:
 Missing or incomplete:
 
 - `extract_media()` / `MediaAsset` is implemented for local media files (`.wav`, `.mp3`, `.m4a`, `.mp4`, `.webm`).
-- URL/video download for ASR fallback is not implemented.
+- URL/video download for ASR fallback is implemented through yt-dlp into `runtime.cache_dir/media/yt-dlp`.
 - Frame/media acquisition for visual context is not implemented.
 - Source-access errors are not yet normalized into a richer source error taxonomy beyond existing `VctxError` subclasses.
 
@@ -103,7 +103,7 @@ Missing or incomplete:
   run_chapters
   ```
 
-- `run_asr()` exists for the local `local-faster-whisper` instance. Real transcription is implemented through the optional `faster-whisper` package when the ASR extra is installed.
+- `run_asr()` exists for local `local-faster-whisper` and configured `openai-compatible-audio` instances.
 
 - Adapter protocols/classes are not implemented:
 
@@ -136,17 +136,19 @@ Missing or incomplete:
   FrameAsset
   ```
 
-- Transform evidence is only partially represented by `RoutePlan.evidence_seed`; it is not yet written into manifest steps.
-- A deterministic full CLI integration test covers local media -> fake faster-whisper ASR -> transcript/chunks/context pack.
+- Transform evidence is written to `manifest.transform_evidence` for ASR planning/execution.
+- Deterministic full CLI integration tests cover local media -> fake faster-whisper ASR and URL -> yt-dlp media download -> ASR -> transcript/chunks/context pack.
 
 Implemented ASR execution slice:
 
 - `MediaAsset` model exists.
 - Local media files can be detected and exposed as `MediaAsset`.
-- `run_asr()` exists for the local `local-faster-whisper` instance boundary.
-- `FasterWhisperAsrAdapter` class performs real transcription when the optional ASR extra is installed; without the extra it raises an actionable error.
-- Persistent model cache and offline/no-download behavior are unit-tested.
-- `prepare` can fall back from missing local-media transcript to ASR and then continue through parse/normalize/chunk/render.
+- URL media can be downloaded through yt-dlp for ASR fallback.
+- `run_asr()` exists for local `local-faster-whisper` and configured `openai-compatible-audio` instances.
+- `FasterWhisperAsrAdapter` performs real transcription when the optional ASR extra is installed; without the extra it raises an actionable error.
+- `OpenAiCompatibleAsrAdapter` performs multipart audio POSTs using a selected instance and credential resolved from shell env/`runtime.env_files`.
+- Persistent model cache, offline/no-download behavior, credential redaction, and cache-write errors are unit-tested.
+- `prepare` can fall back from missing local/URL transcript to ASR and then continue through parse/normalize/chunk/render.
 
 ### `docs/graph/manifest.md`
 
@@ -156,11 +158,11 @@ Implemented:
 - Successful prepare runs write `manifest.json`.
 - Steps, artifacts, warnings, and run status are represented.
 
+- Structured ASR transform evidence is recorded in `manifest.transform_evidence`, including provider/model/upload/cost route evidence.
+
 Missing or incomplete:
 
-- `ManifestStep` does not yet include structured transform evidence.
-- Provider/model/cost/upload/privacy fields from model-mediated steps are not recorded.
-- Partial manifests for missing subtitles / unavailable optional capabilities are not yet produced by `prepare`.
+- Non-ASR provider/model/cost/upload/privacy fields are not recorded because those model-mediated steps are not implemented.
 - Error manifests are not written when the app fails early.
 
 ### `docs/graph/cli.md`

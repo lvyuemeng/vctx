@@ -33,6 +33,7 @@ class Manifest(BaseModel):
     artifacts: list[ArtifactRef]
     steps: list[ManifestStep]
     warnings: list[str] = []
+    transform_evidence: list[dict[str, object]] = []
 
 
 class ManifestBuilder:
@@ -41,6 +42,7 @@ class ManifestBuilder:
         self.tool_version = tool_version
         self.steps: list[ManifestStep] = []
         self.warnings: list[str] = []
+        self.transform_evidence: list[dict[str, object]] = []
 
     @classmethod
     def start(cls, input: str, tool_version: str) -> ManifestBuilder:
@@ -52,6 +54,9 @@ class ManifestBuilder:
     def warn(self, message: str) -> None:
         self.warnings.append(message)
 
+    def add_transform_evidence(self, evidence: BaseModel) -> None:
+        self.transform_evidence.append(evidence.model_dump(mode="json", exclude_none=True))
+
     def finish(self, status: RunStatus, artifacts: list[ArtifactRef]) -> Manifest:
         return Manifest(
             tool_version=self.tool_version,
@@ -61,4 +66,5 @@ class ManifestBuilder:
             artifacts=artifacts,
             steps=self.steps,
             warnings=self.warnings,
+            transform_evidence=self.transform_evidence,
         )

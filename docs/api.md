@@ -351,12 +351,18 @@ Shape:
     {
       "name": "transform.asr",
       "status": "skipped",
-      "detail": "subtitles_available",
-      "provider": null,
-      "model": null
+      "detail": "transcript already available"
     }
   ],
-  "warnings": []
+  "warnings": [],
+  "transform_evidence": [
+    {
+      "capability": "asr",
+      "selected_route": "skipped",
+      "deterministic": true,
+      "reason": "transcript already available"
+    }
+  ]
 }
 ```
 
@@ -369,8 +375,9 @@ Fields:
 | `status` | `ok`, `partial`, or `error`. |
 | `input` | Original user input string. |
 | `artifacts` | Files written relative to output directory. |
-| `steps` | Ordered pipeline steps. Transform steps may include `provider`, `model`, source/output artifact refs, and deterministic/upload/cost hints. |
+| `steps` | Ordered pipeline steps with compact status/details. |
 | `warnings` | Recoverable issues. |
+| `transform_evidence` | Structured route evidence for model-mediated capabilities, including selected route, provider/model id, upload/cost flags, deterministic flag, and reason. Secrets are never recorded. |
 
 ### `metadata.json`
 

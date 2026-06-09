@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from vctx.app.config import PrepareRequest, ResolvedConfig, WorkflowProfile, resolve_config
+from vctx.app.credentials import CredentialError, resolve_env_credential
 from vctx.app.errors import NoTranscriptError
 from vctx.app.result import PrepareResult
 from vctx.chunking.chunker import chunk_transcript
@@ -53,6 +54,21 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
         )
     except NoTranscriptError as exc:
         manifest.add_step("transcript.extract", "warning", str(exc))
+        pre_media_asr_plan = plan_asr(
+            resolved.transforms.asr,
+            _asr_environment(resolved),
+            SourceState(has_transcript=False, has_media=True),
+        )
+        if pre_media_asr_plan.selected not in {"local", "configured-online"}:
+            manifest.add_transform_evidence(pre_media_asr_plan.evidence_seed)
+            manifest.add_step("source.media", "skipped", "no executable ASR route selected")
+            manifest.add_step("transform.asr", "warning", pre_media_asr_plan.reason)
+            manifest.warn(_capitalize_warning(str(exc)))
+            manifest.warn(
+                "Provide a transcript file, install the default ASR extra, "
+                "configure an online fallback, or use metadata-only output."
+            )
+            return _write_metadata_partial_result(request, manifest, metadata)
         try:
             media_asset = adapter.extract_media(
                 request.input, preferred_language=resolved.source.preferred_language, cache=cache
@@ -64,6 +80,7 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
                 SourceState(has_transcript=False, has_media=False),
             )
             manifest.add_step("source.media", "warning", str(media_exc))
+            manifest.add_transform_evidence(asr_plan.evidence_seed)
             manifest.add_step("transform.asr", "warning", asr_plan.reason)
             manifest.warn(_capitalize_warning(str(exc)))
             manifest.warn(
@@ -78,7 +95,8 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
             _asr_environment(resolved),
             SourceState(has_transcript=False, has_media=True),
         )
-        if asr_plan.selected != "local":
+        if asr_plan.selected not in {"local", "configured-online"}:
+            manifest.add_transform_evidence(asr_plan.evidence_seed)
             manifest.add_step("transform.asr", "warning", asr_plan.reason)
             manifest.warn(_capitalize_warning(str(exc)))
             manifest.warn(asr_plan.reason)
@@ -89,6 +107,18 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
             manifest.add_step("transform.asr", "warning", "ASR instance is not configured")
             manifest.warn("ASR instance is not configured")
             return _write_metadata_partial_result(request, manifest, metadata)
+        manifest.add_transform_evidence(asr_plan.evidence_seed)
+        api_key: str | None = None
+        if asr_plan.selected == "configured-online":
+            try:
+                api_key = resolve_env_credential(
+                    instance.api_key_env,
+                    env_files=resolved.runtime.env_files,
+                )
+            except CredentialError as credential_exc:
+                manifest.add_step("transform.asr", "warning", str(credential_exc))
+                manifest.warn(str(credential_exc))
+                return _write_metadata_partial_result(request, manifest, metadata)
         try:
             payload = run_asr(
                 asr_plan,
@@ -96,6 +126,7 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
                 instance=instance,
                 cache_root=cache.root,
                 offline=resolved.runtime.offline,
+                api_key=api_key,
             )
         except AsrExecutionError as asr_exc:
             manifest.add_step("transform.asr", "warning", str(asr_exc))
@@ -110,6 +141,7 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
             TransformEnvironment(offline=resolved.runtime.offline),
             SourceState(has_transcript=True, has_media=False),
         )
+        manifest.add_transform_evidence(asr_plan.evidence_seed)
         manifest.add_step(
             "transform.asr",
             "skipped" if asr_plan.selected == "skipped" else "ok",
@@ -154,6 +186,8 @@ def _asr_environment(resolved: ResolvedConfig) -> TransformEnvironment:
         return TransformEnvironment(
             offline=resolved.runtime.offline,
             installed_asr=True,
+            configured_asr_model_id=instance.model or instance.model_policy,
+            configured_asr_cost_mode="local",
         )
     if instance.type == "openai-compatible-audio":
         return TransformEnvironment(

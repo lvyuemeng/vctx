@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -74,8 +75,53 @@ class YtDlpSourceAdapter:
     def extract_media(
         self, value: str, *, preferred_language: str | None, cache: Cache
     ) -> MediaAsset:
-        del preferred_language, cache
-        raise NoTranscriptError(f"media extraction not implemented for URL input: {value}")
+        del preferred_language
+        media_dir = cache.root / "media" / "yt-dlp"
+        media_dir.mkdir(parents=True, exist_ok=True)
+        params: dict[str, Any] = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": False,
+            "format": "bestaudio/best",
+            "outtmpl": str(media_dir / "%(extractor)s__%(id)s.%(ext)s"),
+        }
+        with yt_dlp.YoutubeDL(params) as ydl:
+            info = ydl.extract_info(value, download=True)
+        if not isinstance(info, dict):
+            raise NoTranscriptError(f"yt-dlp returned no media for input: {value}")
+        path = _downloaded_media_path(info)
+        if path is None or not path.exists():
+            raise NoTranscriptError(f"yt-dlp did not produce a media file for input: {value}")
+        duration = _as_optional_float(info.get("duration"))
+        language = _as_optional_str(info.get("language"))
+        audio_suffixes = {".mp3", ".m4a", ".wav", ".opus"}
+        media_type = "audio" if path.suffix.lower() in audio_suffixes else "video"
+        return MediaAsset(
+            id=_media_id(info),
+            source=SourceRef(kind="url", value=value),
+            local_path=path,
+            media_type=media_type,
+            container=path.suffix.lower().lstrip(".") or None,
+            duration_seconds=duration,
+            language_hint=language,
+            provider="yt-dlp",
+        )
+
+
+def _downloaded_media_path(info: dict[str, Any]) -> Path | None:
+    requested = info.get("requested_downloads")
+    if isinstance(requested, list):
+        for raw_download in requested:
+            if not isinstance(raw_download, dict):
+                continue
+            download = cast(dict[str, object], raw_download)
+            path = _as_optional_str(download.get("filepath")) or _as_optional_str(
+                download.get("filename")
+            )
+            if path:
+                return Path(path)
+    filepath = _as_optional_str(info.get("filepath")) or _as_optional_str(info.get("_filename"))
+    return Path(filepath) if filepath else None
 
 
 def _extract_info(value: str) -> dict[str, Any]:
@@ -89,6 +135,12 @@ def _extract_info(value: str) -> dict[str, Any]:
     if not isinstance(info, dict):
         raise NoTranscriptError(f"yt-dlp returned no metadata for input: {value}")
     return info
+
+
+def _media_id(info: dict[str, Any]) -> str:
+    extractor = _as_optional_str(info.get("extractor"))
+    video_id = _as_optional_str(info.get("id")) or "unknown"
+    return f"{extractor}__{video_id}" if extractor else f"url__{video_id}"
 
 
 def _select_subtitle_candidate(
