@@ -12,6 +12,8 @@ ArtifactKind = Literal[
     "chunks",
     "context",
     "readable",
+    "visual_records",
+    "visual_frame",
     "manifest",
 ]
 

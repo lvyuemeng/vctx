@@ -428,7 +428,15 @@ VisualAssessment(
 )
 ```
 
-Planned execution APIs consume the already-shaped recipe rather than re-inferring source class or checking for missing adapters:
+Visual execution APIs consume the already-shaped recipe rather than re-inferring source class or checking for missing adapters. The sample+capture slice is implemented in:
+
+```text
+src/vctx/models/visual.py
+src/vctx/transforms/visual_frames.py
+src/vctx/transforms/visual_execute.py
+```
+
+Implemented public models/APIs:
 
 ```python
 class FrameAsset(BaseModel):
@@ -444,21 +452,35 @@ class VisualRecord(BaseModel):
     frame_id: str
     kind: Literal["ocr", "description", "capture"]
     text: str | None
-    artifact_path: Path | None
+    artifact_path: str | None
     evidence: list[Evidence]
 
+class VisualRecordSet(BaseModel):
+    records: list[VisualRecord] = []
 
+
+def extract_frames(
+    media_asset: MediaAsset,
+    sample_action: AcquisitionAction,
+    frames_dir: Path,
+) -> list[FrameAsset]
+
+
+def run_visual_context(
+    assessment: VisualAssessment,
+    media_asset: MediaAsset,
+    out_dir: Path,
+) -> VisualRecordSet
+```
+
+Planned route-discovery/probe APIs:
+
+```python
 def discover_visual_operations(policy, environment) -> list[VisualOperation]:
     """Return only operations executable in this run."""
 
 
 def make_visual_probe_plan(metadata, transcript) -> list[AcquisitionAction]
-def extract_frames(media_asset, sample_action, cache) -> list[FrameAsset]
-def run_visual_context(
-    assessment: VisualAssessment,
-    frame_assets: list[FrameAsset],
-    cache,
-) -> TransformResult[list[VisualRecord]]
 ```
 
 Concrete bridge:

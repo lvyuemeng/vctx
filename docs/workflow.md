@@ -26,7 +26,7 @@ vctx render    existing metadata/transcript/chunks JSON -> Markdown
 vctx doctor    local environment report
 ```
 
-The current implementation is strongest for deterministic transcript/subtitle workflows and ASR fallback. It has config resolution, transform route planning, local faster-whisper ASR, configured OpenAI-compatible ASR, URL media download for ASR, and transform evidence in manifests. Visual/OCR/cleanup/chapter model-mediated execution paths in `docs/graph/model-transforms.md` remain mostly planned.
+The current implementation is strongest for deterministic transcript/subtitle workflows and ASR fallback. It has config resolution, transform route planning, local faster-whisper ASR, configured OpenAI-compatible ASR, URL media download for ASR, transform evidence in manifests, and first-slice visual capture execution for explicit visual/full workflows. OCR, VLM description, cleanup, and chapter model-mediated execution paths in `docs/graph/model-transforms.md` remain mostly planned.
 
 ## Missing functionality by graph module
 
@@ -71,7 +71,8 @@ Missing or incomplete:
 
 - `extract_media()` / `MediaAsset` is implemented for local media files (`.wav`, `.mp3`, `.m4a`, `.mp4`, `.webm`).
 - URL/video download for ASR fallback is implemented through yt-dlp into `runtime.cache_dir/media/yt-dlp`.
-- Frame/media acquisition for visual context is not implemented.
+- Frame/media acquisition for explicit visual/full workflow capture is implemented for local/URL media when video media can be acquired.
+- Rich scene-change/frame-anchor acquisition for visual context is not implemented yet.
 - Source-access errors are not yet normalized into a richer source error taxonomy beyond existing `VctxError` subclasses.
 
 ### `docs/graph/model-transforms.md`
@@ -94,10 +95,16 @@ Implemented:
 
 Missing or incomplete:
 
-- Most execution APIs are not implemented:
+- Execution APIs implemented:
 
   ```text
-  run_visual_context
+  run_asr
+  run_visual_context      # sample + capture slice only
+  ```
+
+- Execution APIs not implemented:
+
+  ```text
   run_cleanup
   run_chapters
   ```
@@ -123,13 +130,20 @@ Missing or incomplete:
   chapter suggestion
   ```
 
-- Transform output models are missing or incomplete:
+- Transform output models are partially implemented:
 
   ```text
-  TransformResult
-  VisualRecord
-  ChapterCandidate
+  MediaAsset
   FrameAsset
+  VisualRecord
+  ```
+
+- Transform output models still missing or incomplete:
+
+  ```text
+  ChapterCandidate
+  TransformResult
+  structured TransformEvidence in manifest steps
   ```
 
 - Transform evidence is written to `manifest.transform_evidence` for ASR planning/execution.
@@ -211,8 +225,8 @@ Implemented:
 
 Missing or incomplete:
 
-- Renderers do not yet include visual records, chapters, transform evidence, or partial-run warnings.
-- `readable.md` and `context.md` do not reference frames or visual artifacts because those artifacts do not exist yet.
+- Renderers include visual capture records and frame artifact references when explicit visual/full workflows produce them.
+- Renderers do not yet include OCR text, VLM descriptions, chapters, transform evidence, or partial-run warnings.
 
 ### `docs/graph/chunking.md`
 
@@ -304,7 +318,7 @@ Current status:
 | 2 URL subtitle pack | Implemented and fixture-tested; optional network smoke available | `vctx prepare URL --out out` writes full pack when subtitles are available. |
 | 3 metadata-only / partial prepare | Implemented and tested | `workflow=metadata` writes metadata-only partial output; missing subtitles produce metadata partial output. |
 | 4 ASR fallback | Implemented and tested | URL/local media can flow through local faster-whisper or configured OpenAI-compatible ASR; manifest records route evidence. |
-| 5 visual/context enrichment | Planning partially implemented | Route planning and visual acquisition strategy exist; frame extraction/OCR/VLM records do not. |
+| 5 visual/context enrichment | First slice implemented | Explicit visual/full workflows can plan sample+capture, extract frame artifacts, write `visual_records.json`, and render visual frame refs. OCR/VLM records are not implemented. |
 | 6 AI cleanup/chapters | Missing execution | Route planning exists; cleanup/chapter adapters and artifacts do not. |
 
 Later levels should be added without breaking earlier levels.

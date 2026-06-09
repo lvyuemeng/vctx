@@ -3,11 +3,15 @@ from __future__ import annotations
 from vctx.models.chunks import ChunkSet
 from vctx.models.metadata import VideoMetadata
 from vctx.models.transcript import Transcript
+from vctx.models.visual import VisualRecordSet
 from vctx.util.timefmt import format_timestamp
 
 
 def render_context_markdown(
-    metadata: VideoMetadata, transcript: Transcript, chunks: ChunkSet
+    metadata: VideoMetadata,
+    transcript: Transcript,
+    chunks: ChunkSet,
+    visual_records: VisualRecordSet | None = None,
 ) -> str:
     lines = [
         "# Agent Context Pack",
@@ -26,9 +30,22 @@ def render_context_markdown(
         "The chunks below are timestamped source text extracted from the video or transcript.",
         "Preserve timestamps when citing claims.",
         "",
+    ]
+    if visual_records is not None and visual_records.records:
+        lines.extend(["## Visual records", ""])
+        for record in visual_records.records:
+            timestamp = (
+                format_timestamp(record.timestamp_seconds)
+                if record.timestamp_seconds is not None
+                else "unknown"
+            )
+            detail = record.text or record.artifact_path or record.frame_id
+            lines.extend([f"- [{timestamp}] {record.kind}: {detail}"])
+        lines.append("")
+    lines.extend([
         "## Chunks",
         "",
-    ]
+    ])
     for chunk in chunks.chunks:
         lines.extend(
             [

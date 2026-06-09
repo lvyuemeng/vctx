@@ -9,6 +9,7 @@ from vctx.models.artifacts import Artifact, ArtifactBundle, ArtifactKind
 from vctx.models.chunks import ChunkSet
 from vctx.models.metadata import VideoMetadata
 from vctx.models.transcript import Transcript
+from vctx.models.visual import VisualRecordSet
 from vctx.render.context_md import render_context_markdown
 from vctx.render.readable_md import render_readable_markdown
 from vctx.render.transcript_md import render_transcript_markdown
@@ -42,6 +43,7 @@ def render_artifact_bundle(
     clean_transcript: Transcript,
     chunks: ChunkSet,
     formats: set[OutputFormat],
+    visual_records: VisualRecordSet | None = None,
 ) -> ArtifactBundle:
     artifacts: list[Artifact] = []
     if "json" in formats:
@@ -53,12 +55,14 @@ def render_artifact_bundle(
                 json_artifact("chunks.json", "chunks", chunks),
             ]
         )
+        if visual_records is not None and visual_records.records:
+            artifacts.append(json_artifact("visual_records.json", "visual_records", visual_records))
     if "context" in formats:
         artifacts.append(
             markdown_artifact(
                 "context.md",
                 "context",
-                render_context_markdown(metadata, clean_transcript, chunks),
+                render_context_markdown(metadata, clean_transcript, chunks, visual_records),
             )
         )
     if "readable" in formats:
@@ -66,7 +70,7 @@ def render_artifact_bundle(
             markdown_artifact(
                 "readable.md",
                 "readable",
-                render_readable_markdown(metadata, clean_transcript, chunks),
+                render_readable_markdown(metadata, clean_transcript, chunks, visual_records),
             )
         )
     if "transcript" in formats:
