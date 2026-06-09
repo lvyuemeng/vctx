@@ -91,8 +91,8 @@ ResolvedConfig
   runtime:
     cache_dir
     keep_temp
-    offline
     workflow
+    env_files
   source:
     preferred_language
     subtitle_fallback_order
@@ -102,6 +102,8 @@ ResolvedConfig
     visual_context: CapabilityPolicy
     cleanup: CapabilityPolicy
     chapters: CapabilityPolicy
+  instances:
+    asr: dict[str, AsrInstanceConfig]
   output:
     formats
     chunk_max_chars
@@ -110,13 +112,19 @@ ResolvedConfig
 
 ```text
 CapabilityPolicy
-  enabled: auto | true | false
-  route: default | auto | disabled | explicit
-  allow_network: bool
-  allow_upload: bool
-  allow_paid: bool
-  preferred_provider: optional advanced/debug value
-  model: optional advanced/debug value
+  enabled: auto | true | false        # legacy/internal during refactor
+  route: default | auto | disabled | explicit  # legacy/internal during refactor
+  instance: str | None                # preferred public selector
+```
+
+```text
+AsrInstanceConfig
+  type: local-faster-whisper | openai-compatible-audio
+  model_policy: auto | tiny | base | small | medium | large
+  cache: persistent | disabled
+  api_key_env: str | None
+  cost: free | paid | local | unknown
+  upload: none | required
 ```
 
 Default capability behavior:
@@ -145,9 +153,9 @@ Config is small, optional, and layered before route planning. Missing fields inh
 
 ```toml
 [runtime]
-offline = false
 workflow = "default"
 cache_dir = ".cache/vctx"
+env_files = [".env"]
 keep_temp = false
 
 [source]
@@ -161,28 +169,29 @@ chunk_max_chars = 6000
 chunk_max_seconds = 900
 
 [transforms.asr]
-enabled = "auto"                 # auto | true | false
-route = "auto"                   # auto | default | local | free-online | configured-online | disabled | explicit
-allow_network = true
-allow_upload = false
-allow_paid = false
-preferred_provider = "openai-whisper" # advanced/debug only
-model = "whisper-1"                    # advanced/debug only
+instance = "local-default"
 
-[providers.asr.openai-whisper]
+[instances.asr.local-default]
+type = "local-faster-whisper"
+model_policy = "auto"
+cache = "persistent"
+
+[instances.asr.openai-whisper]
 type = "openai-compatible-audio"
 base_url = "https://api.openai.com/v1/audio/transcriptions"
 api_key_env = "OPENAI_API_KEY"
 model = "whisper-1"
-cost_mode = "paid"
+cost = "paid"
+upload = "required"
 ```
 
-If `[providers.*]` is missing, config loading succeeds. Route planning marks configured-online unavailable and tries deterministic/local/free routes or writes an actionable partial result.
+If `[instances.asr.*]` is missing, config loading succeeds. Route planning uses built-in local defaults or writes an actionable partial result.
 
 Secrets rule:
 
 ```text
 config stores api_key_env = "ENV_VAR_NAME"
+runtime may read runtime.env_files such as .env before credential resolution
 runtime reads ENV_VAR_NAME only when selected provider needs credentials
 manifest redacts credential values as [REDACTED]
 ```

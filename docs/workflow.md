@@ -680,33 +680,37 @@ free_online_registry.asr = None
 
 and prefer local ASR.
 
-Configured online ASR is different: the user explicitly provides a provider config. A future project config should be shaped like this:
+Configured online ASR is different: the user explicitly selects a composable ASR instance. Public config should be shaped like this:
 
 ```toml
-[transforms.asr]
-enabled = "auto"
-route = "auto"              # auto | local | configured-online | disabled
-allow_network = true
-allow_upload = true
-allow_paid = false
-preferred_provider = "openai-whisper" # optional advanced override
-model = "whisper-1"                  # optional advanced override
+[runtime]
+env_files = [".env"]
 
-[providers.asr.openai-whisper]
+[transforms.asr]
+instance = "openai-whisper"
+
+[instances.asr.local-default]
+type = "local-faster-whisper"
+model_policy = "auto"
+cache = "persistent"
+
+[instances.asr.openai-whisper]
 type = "openai-compatible-audio"
 base_url = "https://api.openai.com/v1/audio/transcriptions"
 api_key_env = "OPENAI_API_KEY"
 model = "whisper-1"
-cost_mode = "paid"
+cost = "paid"
+upload = "required"
 ```
 
 Rules:
 
 ```text
-- `configured-online` is never selected when `allow_upload=false`.
-- Paid providers require both configured credentials and `allow_paid=true`.
+- Local vs online is separated by instance type, not by boolean route flags.
+- Explicitly naming an online instance is the positive user action that permits upload/cost evidence for that instance.
 - API keys are referenced by environment variable name, not stored in config.
-- Normal users should not need provider flags; config is an advanced escape hatch.
+- `runtime.env_files` can point at `.env` files for convenient local credential loading.
+- Normal users should not need provider flags; config names a reusable instance.
 ```
 
 ### Local ASR model storage
@@ -720,7 +724,13 @@ For `faster-whisper`, model files should be stored under the normal vctx cache r
 Default cache root:
 
 ```text
-platformdirs.user_cache_dir("vctx")
+platformdirs.user_cache_path("vctx", appauthor=False)
+```
+
+On this Windows dev machine that resolves to:
+
+```text
+C:\Users\nostalgia\AppData\Local\vctx\Cache
 ```
 
 Request override:

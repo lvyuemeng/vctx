@@ -154,7 +154,10 @@ def plan_asr(
             uploaded=True,
         )
     if _online_allowed(policy, environment) and policy.allow_upload and environment.configured_asr:
-        if environment.configured_asr_cost_mode == "paid" and not policy.allow_paid:
+        explicit_instance = policy.instance is not None
+        if environment.configured_asr_cost_mode == "paid" and not (
+            policy.allow_paid or explicit_instance
+        ):
             return _plan(
                 capability="asr",
                 selected="unavailable",
@@ -163,7 +166,10 @@ def plan_asr(
                 requires_user_config=True,
             )
         provider_id = (
-            environment.configured_asr_provider_id or policy.preferred_provider or "default-asr"
+            environment.configured_asr_provider_id
+            or policy.instance
+            or policy.preferred_provider
+            or "default-asr"
         )
         model_id = policy.model or environment.configured_asr_model_id
         return _plan(

@@ -5,6 +5,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from platformdirs import user_cache_path
 from pydantic import BaseModel, Field
 
 from vctx.render.bundle import DEFAULT_FORMATS, OutputFormat
@@ -35,6 +36,9 @@ CapabilityRoute = Literal[
 ]
 ProviderCostMode = Literal["free", "paid", "local", "unknown"]
 ProviderGroup = Literal["asr", "ocr", "vision", "text"]
+AsrInstanceType = Literal["local-faster-whisper", "openai-compatible-audio"]
+InstanceCachePolicy = Literal["persistent", "disabled"]
+InstanceUploadPolicy = Literal["none", "required"]
 
 
 class PrepareRequest(BaseModel):
@@ -53,10 +57,11 @@ class PrepareRequest(BaseModel):
 
 
 class RuntimeConfig(BaseModel):
-    cache_dir: Path | None
+    cache_dir: Path
     keep_temp: bool
     offline: bool
     workflow: WorkflowProfile
+    env_files: list[Path] = Field(default_factory=list)
 
 
 class SourceConfig(BaseModel):
@@ -70,6 +75,7 @@ class SourceConfig(BaseModel):
 class CapabilityPolicy(BaseModel):
     enabled: CapabilityEnabled
     route: CapabilityRoute = "auto"
+    instance: str | None = None
     allow_network: bool = True
     allow_upload: bool = True
     allow_paid: bool = False
@@ -105,12 +111,28 @@ class ProviderRegistry(BaseModel):
     text: dict[str, ProviderConfig] = Field(default_factory=dict)
 
 
+class AsrInstanceConfig(BaseModel):
+    type: AsrInstanceType
+    model: str | None = None
+    model_policy: Literal["auto", "tiny", "base", "small", "medium", "large"] = "auto"
+    cache: InstanceCachePolicy = "persistent"
+    base_url: str | None = None
+    api_key_env: str | None = None
+    cost: ProviderCostMode = "unknown"
+    upload: InstanceUploadPolicy = "none"
+
+
+class InstanceRegistry(BaseModel):
+    asr: dict[str, AsrInstanceConfig] = Field(default_factory=dict)
+
+
 class ResolvedConfig(BaseModel):
     runtime: RuntimeConfig
     source: SourceConfig
     transforms: TransformConfig
     output: OutputConfig
     providers: ProviderRegistry = Field(default_factory=ProviderRegistry)
+    instances: InstanceRegistry = Field(default_factory=InstanceRegistry)
 
 
 def _policy(
@@ -205,6 +227,34 @@ def _resolve_provider_registry(config: dict[str, Any]) -> ProviderRegistry:
     return ProviderRegistry.model_validate(registry)
 
 
+def _resolve_instance_registry(config: dict[str, Any]) -> InstanceRegistry:
+    instances = _section(config, "instances")
+    asr_table = instances.get("asr", {})
+    if not isinstance(asr_table, dict):
+        return InstanceRegistry()
+    return InstanceRegistry(
+        asr={
+            name: AsrInstanceConfig.model_validate(raw_instance)
+            for name, raw_instance in asr_table.items()
+            if isinstance(raw_instance, dict)
+        }
+    )
+
+
+def _default_cache_dir() -> Path:
+    return user_cache_path("vctx", appauthor=False)
+
+
+def _paths(values: Any) -> list[Path]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        return [Path(values)]
+    if isinstance(values, list):
+        return [Path(value) for value in values]
+    return []
+
+
 def _resolve_policy(
     capability: str,
     enabled: CapabilityEnabled,
@@ -242,7 +292,7 @@ def resolve_config(request: PrepareRequest) -> ResolvedConfig:
     cache_dir = request.cache_dir
     if cache_dir is None:
         configured_cache = _config_value(runtime, "cache_dir", None)
-        cache_dir = Path(configured_cache) if configured_cache is not None else None
+        cache_dir = Path(configured_cache) if configured_cache is not None else _default_cache_dir()
 
     preferred_language = request.language
     if preferred_language is None:
@@ -258,6 +308,7 @@ def resolve_config(request: PrepareRequest) -> ResolvedConfig:
             keep_temp=request.keep_temp or bool(_config_value(runtime, "keep_temp", False)),
             offline=offline,
             workflow=workflow,
+            env_files=_paths(_config_value(runtime, "env_files", [])),
         ),
         source=SourceConfig(
             preferred_language=preferred_language,
@@ -280,4 +331,5 @@ def resolve_config(request: PrepareRequest) -> ResolvedConfig:
             chunk_max_seconds=_config_value(output, "chunk_max_seconds", request.chunk_max_seconds),
         ),
         providers=_resolve_provider_registry(config),
+        instances=_resolve_instance_registry(config),
     )

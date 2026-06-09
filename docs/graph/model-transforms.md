@@ -55,13 +55,27 @@ Transform APIs receive resolved policy from `app`. They do not read user config 
 
 ```text
 CapabilityPolicy
-  enabled: auto | true | false
-  route: default | auto | disabled | explicit
-  allow_network: bool
-  allow_upload: bool
-  allow_paid: bool
-  preferred_provider: str | None   # advanced/debug only
-  model: str | None                # advanced/debug only
+  enabled: auto | true | false      # legacy/internal during refactor
+  route: default | auto | disabled | explicit  # legacy/internal during refactor
+  instance: str | None              # preferred public selector
+```
+
+Preferred local/online separation is by named instance, not booleans:
+
+```text
+AsrInstanceConfig
+  name: local-default
+  type: local-faster-whisper
+  model_policy: auto | tiny | base | small | medium | large
+  cache: persistent | disabled
+
+AsrInstanceConfig
+  name: openai-whisper
+  type: openai-compatible-audio
+  api_key_env: OPENAI_API_KEY
+  model: whisper-1
+  cost: paid
+  upload: required
 ```
 
 Missing fields are already resolved by `app` before this module is called:
@@ -84,26 +98,16 @@ TransformEnvironment
   network_available: bool
   offline: bool
   model_cache_root: Path
-  configured_providers:
-    asr: dict[str, ProviderConfig]
-    ocr: dict[str, ProviderConfig]
-    vision: dict[str, ProviderConfig]
-    text: dict[str, ProviderConfig]
+  configured_instances:
+    asr: dict[str, AsrInstanceConfig]
   free_online_registry:
     asr: RouteDescriptor | None
     ocr: RouteDescriptor | None
     vision: RouteDescriptor | None
     text: RouteDescriptor | None
-
-ProviderConfig
-  type: str
-  base_url: str
-  api_key_env: str | None
-  model: str | None
-  cost_mode: free | paid | local | unknown
 ```
 
-The registry is curated by the project. It is not a provider menu shown to normal users. Provider credentials are read from environment variables only after a configured-online route is selected.
+Credential-bearing instances store `api_key_env`, never the secret value. `.env` support belongs in the app/runtime layer; transform execution receives already resolved availability/evidence and reads credentials only for the selected instance.
 
 ## Public module API set
 
