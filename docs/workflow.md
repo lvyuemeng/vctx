@@ -990,7 +990,7 @@ Based on the remaining graph gaps, implement in this order:
 
 1. **Visual records and rendering**
    - Add frame extraction, `VisualRecord`, and renderer support.
-   - Use `VisualAcquisitionPlan` before side-effecting frame extraction.
+   - Use `VisualAssessment.recipe` before side-effecting frame extraction.
    - Keep visual workflows optional and timestamped.
 
 2. **Cleanup and chapters**

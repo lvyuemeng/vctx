@@ -1,105 +1,94 @@
 from __future__ import annotations
 
-from vctx.transforms.visual_planning import VisualSourceSignals, plan_visual_acquisition
+from vctx.transforms.visual_planning import (
+    Evidence,
+    VisualAssessment,
+    VisualSourceSignals,
+    plan_visual_acquisition,
+)
 
 
-def test_visual_acquisition_skips_podcast_like_video() -> None:
-    plan = plan_visual_acquisition(
-        VisualSourceSignals(
-            has_video=True,
-            title="Long-form AI Podcast interview",
-            duration_seconds=5400,
-            transcript_available=True,
-            transcript_timestamps=True,
-            motion_hint="low",
-            text_density_hint="low",
-        )
-    )
-
-    assert plan.useful is False
-    assert plan.content_class == "podcast"
-    assert plan.sampling_strategy == "sparse_cover"
-    assert plan.extraction_intents == ["capture"]
-    assert plan.target_frame_count == 1
+def _action_names(assessment: VisualAssessment) -> list[str]:
+    return [action.name for action in assessment.recipe]
 
 
-def test_visual_acquisition_uses_hybrid_ocr_for_slide_lecture() -> None:
-    plan = plan_visual_acquisition(
+def test_visual_assessment_is_a_compact_score_and_recipe_contract() -> None:
+    assessment = plan_visual_acquisition(
         VisualSourceSignals(
             has_video=True,
             title="Distributed systems lecture with slides",
             duration_seconds=3600,
-            transcript_available=True,
             transcript_timestamps=True,
-            text_density_hint="high",
-            motion_hint="low",
+            evidence=[
+                Evidence(kind="transcript", name="visual-reference", weight=0.4),
+                Evidence(kind="frame", name="dense-text", weight=0.7),
+                Evidence(kind="frame", name="low-motion", weight=0.2),
+            ],
         )
     )
 
-    assert plan.useful is True
-    assert plan.content_class == "slides"
-    assert plan.sampling_strategy == "hybrid"
-    assert plan.extraction_intents == ["ocr", "capture"]
-    assert plan.align_to_transcript is True
-    assert plan.prefer_keyframes is True
-    assert plan.deduplicate_near_identical is True
-    assert plan.target_frame_count == 40
-    assert plan.min_interval_seconds == 8
+    assert assessment.visual_yield >= 0.8
+    assert assessment.audio_sufficiency <= 0.2
+    assert _action_names(assessment) == ["sample", "ocr", "capture"]
+    assert assessment.recipe[0].params == {
+        "strategy": "changes+anchors",
+        "budget": 40,
+        "min_gap_s": 8,
+    }
 
 
-def test_visual_acquisition_preserves_images_for_diagrams_and_formulas() -> None:
-    plan = plan_visual_acquisition(
+def test_audio_sufficient_sources_keep_only_a_cover_capture() -> None:
+    assessment = plan_visual_acquisition(
         VisualSourceSignals(
             has_video=True,
-            content_hint="formula",
+            title="Long-form podcast interview",
+            duration_seconds=5400,
+            evidence=[
+                Evidence(kind="transcript", name="audio-complete", weight=0.8),
+                Evidence(kind="frame", name="low-text", weight=0.5),
+                Evidence(kind="frame", name="low-change", weight=0.4),
+            ],
+        )
+    )
+
+    assert assessment.visual_yield == 0.0
+    assert assessment.audio_sufficiency >= 0.9
+    assert _action_names(assessment) == ["sample", "capture"]
+    assert assessment.recipe[0].params == {"strategy": "cover", "budget": 1}
+
+
+def test_diagram_formula_evidence_composes_ocr_description_and_capture() -> None:
+    assessment = plan_visual_acquisition(
+        VisualSourceSignals(
+            has_video=True,
             duration_seconds=900,
             transcript_timestamps=True,
+            evidence=[
+                Evidence(kind="transcript", name="formula-reference", weight=0.7),
+                Evidence(kind="frame", name="layout-heavy", weight=0.8),
+                Evidence(kind="frame", name="dense-text", weight=0.3),
+            ],
         )
     )
 
-    assert plan.useful is True
-    assert plan.content_class == "formula"
-    assert plan.sampling_strategy == "hybrid"
-    assert plan.extraction_intents == ["ocr", "describe", "capture"]
-    assert plan.target_frame_count == 15
-    assert plan.align_to_transcript is True
-    assert plan.warnings == [
-        "diagram/formula interpretation is model output; keep source frame references"
-    ]
+    assert assessment.visual_yield >= 0.9
+    assert _action_names(assessment) == ["sample", "ocr", "describe", "capture"]
+    assert assessment.recipe[0].params == {
+        "strategy": "changes+anchors",
+        "budget": 15,
+        "min_gap_s": 5,
+    }
+    assert assessment.cautions == ["description is model output; keep source frames"]
 
 
-def test_visual_acquisition_uses_descriptions_for_scenery() -> None:
-    plan = plan_visual_acquisition(
+def test_no_video_has_empty_recipe_without_extra_triggers() -> None:
+    assessment = plan_visual_acquisition(
         VisualSourceSignals(
-            has_video=True,
-            content_hint="scenery",
-            duration_seconds=1800,
-            motion_hint="high",
-            text_density_hint="low",
+            has_video=False,
+            evidence=[Evidence(kind="transcript", name="audio-complete", weight=1.0)],
         )
     )
 
-    assert plan.useful is True
-    assert plan.sampling_strategy == "scene_change"
-    assert plan.extraction_intents == ["describe", "capture"]
-    assert plan.target_frame_count == 10
-    assert plan.align_to_transcript is False
-
-
-def test_visual_acquisition_unknown_mixed_uses_conservative_hybrid() -> None:
-    plan = plan_visual_acquisition(
-        VisualSourceSignals(
-            has_video=True,
-            duration_seconds=None,
-            transcript_timestamps=True,
-            text_density_hint="unknown",
-            motion_hint="unknown",
-        )
-    )
-
-    assert plan.useful is True
-    assert plan.content_class == "mixed"
-    assert plan.sampling_strategy == "hybrid"
-    assert plan.extraction_intents == ["ocr", "describe", "capture"]
-    assert plan.target_frame_count == 4
-    assert plan.align_to_transcript is True
+    assert assessment.visual_yield == 0.0
+    assert assessment.recipe == []
+    assert assessment.evidence[0].name == "audio-complete"

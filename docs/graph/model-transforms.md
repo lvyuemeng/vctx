@@ -248,30 +248,54 @@ free-online adapter: only if project registry contains stable no-auth/no-cost ro
 
 ### Visual context
 
-Visual context has two planning layers:
+Visual context uses one small composable contract:
 
-1. `plan_visual_acquisition(signals)` decides whether visuals are useful, when to sample, and what each sampled frame is for.
-2. `plan_visual_context(policy, environment, source_state)` chooses the executable OCR/VLM route for the planned frame assets.
+```text
+evidence -> assessment -> recipe
+```
+
+`evidence` is a weighted list of observations from metadata, transcript clues, frame probes, OCR probes, or an optional model judge. The core planner does not need to know which detector produced the observation.
+
+`assessment` is numeric and comparable, not enum confidence:
+
+```text
+visual_yield      0.0..1.0  how much source information visuals add
+audio_sufficiency 0.0..1.0  how sufficient transcript/audio appears
+```
+
+`recipe` is an ordered list of acquisition actions, not scattered booleans:
+
+```text
+sample(strategy="cover" | "changes" | "changes+anchors", budget=N, min_gap_s=S)
+ocr()
+describe()
+capture()
+```
+
+Examples:
+
+```text
+podcast evidence
+  -> visual_yield near 0
+  -> sample cover + capture only
+
+slide/screen evidence
+  -> high visual_yield
+  -> sample changes+anchors + ocr + capture
+
+diagram/formula/layout evidence
+  -> high visual_yield
+  -> sample changes+anchors + ocr + describe + capture
+```
+
+The first execution layer can be deterministic. Later, a free/configured LLM or VLM can simply add more `Evidence` items or validate an `assessment`; it should not replace the contract.
 
 ```text
 plan_visual_acquisition(signals)
-  -> no video: none
-  -> podcast/audio-first: sparse cover frame only, no visual enrichment by default
-  -> slide/screen lecture: hybrid scene-change + transcript-aligned sampling; OCR + source frame capture
-  -> diagram/formula: hybrid sampling; OCR + VLM description + source frame capture
-  -> scenery: sparse scene-change sampling; VLM description + source frame capture
-  -> unknown/mixed: conservative hybrid or scene-change sampling
-  -> VisualAcquisitionPlan
+  -> VisualAssessment(recipe=[...])
 
 plan_visual_context(policy, environment, source_state)
-  -> if visual disabled: skipped
-  -> if frames/media unavailable: unavailable or skipped optional
-  -> choose OCR route for high-text frames
-  -> choose VLM route for diagrams/formulas/scenery or low-text visual content
-  -> candidate local_ocr if rapidocr installed and likely good enough
-  -> candidate free_online_vision if registry route exists and better for input
-  -> candidate configured_online_vision if provider config exists
-  -> RoutePlan
+  -> choose executable OCR/VLM route for the actions in the recipe
 
 run_visual_context(plan, frame_assets, cache)
   -> selected adapter performs OCR and/or visual description
@@ -279,7 +303,7 @@ run_visual_context(plan, frame_assets, cache)
   -> evidence labels generated descriptions vs source text
 ```
 
-Sampling goal: maximize new source information per frame, not uniform frame coverage. Frame extraction should combine visual-change keyframes with transcript boundaries as a backstop, enforce a minimum interval, and drop near-duplicates before OCR/VLM calls.
+Sampling goal: maximize new source information per frame, not uniform frame coverage. Frame extraction should combine visual-change candidates with transcript anchors when useful, enforce a minimum interval, and drop near-duplicates before OCR/VLM calls.
 
 Concrete default stack:
 
