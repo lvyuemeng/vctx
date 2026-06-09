@@ -144,22 +144,24 @@ cost = "paid"                    # free | paid | local | unknown
 upload = "required"              # online ASR uploads media/audio
 
 [transforms.visual_context]
-route = "configured-online"
-preferred_provider = "project-vision"
+model = "auto"                   # infer best available route
 
-[providers.vision.project-vision]
-type = "openai-compatible-vision"
-base_url = "https://api.openai.com/v1/chat/completions"
-api_key_env = "OPENAI_API_KEY"
-model = "gpt-4o-mini"
-cost_mode = "paid"               # free | paid | local | unknown
+[transforms.visual_description]
+model = "openrouter:nex-agi/nex-n2-pro:free"
+
+[transforms.essential_cases]
+model = "auto"                   # OpenRouter free route when key exists, otherwise deterministic fallback
 ```
 
-Legacy policy fields such as `route`, `allow_upload`, and `allow_paid` may exist internally while the planner is being refactored, but the public config should prefer named instances. Local vs online is separated by instance type, not by fuzzy booleans:
+Legacy policy fields such as `route`, `allow_upload`, `allow_paid`, `preferred_provider`, and `[providers.*]` may exist internally while the planner is being refactored, but normal public config should prefer decisive model/resource references over provider blocks. Local vs online is inferred from the model reference shape:
 
 ```text
-local-default.type = local-faster-whisper
-openai-whisper.type = openai-compatible-audio
+openrouter:<model-id>  -> remote OpenRouter route, OPENROUTER_API_KEY credential name, upload as required by capability
+local:<path-or-id>     -> local route, no upload, explicit paths are config-relative and disable managed download/cache
+hf:<repo-id>           -> managed local cache route when a compatible runtime exists
+alias:<name>           -> advanced escape hatch into configured provider aliases
+none                  -> disable that model-mediated transform
+auto                  -> choose the best available route for the capability
 ```
 
 Field semantics:
@@ -173,16 +175,16 @@ Field semantics:
 | `source.subtitle_fallback_order` | Source adapter policy for official/manual subtitles, automatic captions, and fallback language. |
 | `source.media_download_policy` | `auto` allows media acquisition only when a selected workflow needs it; `never` blocks media downloads. |
 | `output.formats` | Default render/artifact formats when CLI `--format` is not supplied. |
-| `transforms.asr.instance` | Name of a composable ASR instance from `[instances.asr.<name>]`. Omit for built-in default selection. |
+| `transforms.asr.instance` | Legacy/composable ASR instance selector from `[instances.asr.<name>]`. New model-mediated transforms should prefer `model = "prefix:value"` where practical. |
+| `transforms.<capability>.model` | Decisive model/resource reference. `auto`, `none`, `openrouter:<model-id>`, `local:<path-or-id>`, `hf:<repo-id>`, and `alias:<name>` infer provider, credential name, upload/cost/cache behavior, and capability checks. |
 | `instances.asr.<name>.type` | Capability implementation type. Current planned values: `local-faster-whisper`, `openai-compatible-audio`. |
 | `instances.asr.<name>.model_policy` | Local model-size policy for managed-cache instances. `auto` inspects hardware/duration/cache and downloads at most one chosen model. |
 | `instances.asr.<name>.model` | Either a model id such as `tiny`/`base` for managed persistent cache, or an explicit local model path. A local path automatically disables managed cache/download. |
 | `instances.asr.<name>.cache` | Legacy/internal override. Public config should usually omit it; managed cache is the default for model ids, and local paths are local-only automatically. |
 | `instances.asr.<name>.api_key_env` | Environment variable containing a credential. The config stores only the variable name. |
 | `instances.asr.<name>.cost` / `upload` | Positive evidence fields used for manifest/planning. Explicitly choosing a paid/uploading instance means the user selected that instance. |
-| `transforms.visual_context.preferred_provider` | Optional configured vision provider name used when visual description is enabled and the route is `configured-online` or `free-online`. |
-| `providers.vision.<name>.type` | Current implemented value: `openai-compatible-vision`, using chat-completions style image messages. |
-| `providers.vision.<name>.api_key_env` | Environment variable containing the VLM credential; values can come from shell env or `runtime.env_files`. |
+| `providers.vision.<name>.*` | Advanced/legacy provider alias escape hatch. Current implemented value: `openai-compatible-vision`, using chat-completions style image messages. Normal config should use `transforms.visual_description.model` instead. |
+| `providers.vision.<name>.api_key_env` | Environment variable containing the VLM credential for the advanced provider alias path; values can come from shell env or `runtime.env_files`. |
 
 Configured online ASR is selected only when an online instance is explicitly selected or project defaults choose it, required credentials are present, and the manifest can record upload/cost evidence.
 
@@ -228,7 +230,7 @@ prepare INPUT
   -> manifest records every route and provider actually used
 ```
 
-The CLI should not expose raw provider choices such as `provider-x:model-y` for normal usage. If two implementations can serve the same capability, `vctx` should choose the best project default and record the actual choice in `manifest.json`.
+The CLI should not expose raw provider menus for normal usage. Prefix-style model/resource references such as `openrouter:<model-id>`, `local:<path>`, `hf:<repo-id>`, `alias:<name>`, `auto`, and `none` are decisive field shapes: they infer route behavior instead of requiring separate provider/base-url/api-key/cost/upload fields. If two implementations can serve the same capability, `vctx` should choose the best project default and record the actual choice in `manifest.json`.
 
 ### `vctx metadata`
 

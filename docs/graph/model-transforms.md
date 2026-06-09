@@ -433,6 +433,7 @@ Visual execution APIs consume the already-shaped recipe rather than re-inferring
 ```text
 src/vctx/models/visual.py
 src/vctx/transforms/visual_frames.py
+src/vctx/transforms/model_resolution.py
 src/vctx/transforms/visual_ocr.py
 src/vctx/transforms/visual_vlm.py
 src/vctx/transforms/visual_routes.py
@@ -467,6 +468,21 @@ def discover_visual_operations(
     *,
     vision_providers: dict[str, ProviderConfig] | None = None,
 ) -> list[VisualOperation]
+
+
+def resolve_model_ref(
+    value: str | None,
+    *,
+    capability: ModelCapability,
+    env: Mapping[str, str],
+    base_dir: Path | None = None,
+    openrouter_models: list[OpenRouterModel] | None = None,
+) -> ResolvedModelRoute
+
+
+def choose_openrouter_free_model(
+    models: list[OpenRouterModel], *, capability: ModelCapability
+) -> OpenRouterModel | None
 
 
 def extract_frames(
@@ -529,9 +545,10 @@ Concrete default stack:
 ```text
 local OCR adapter: rapidocr-onnxruntime
 frame extraction: ffmpeg canonical PNG output; pillow utilities later; opencv-python-headless only when needed
+model reference resolver: implemented for auto, none, openrouter:<model-id>, local:<path-or-id>, hf:<repo-id>, alias:<name>
 local VLM adapter: none by default
-free-online VLM/OCR: preferred when stable and materially better; no built-in discovery yet
-configured-online VLM/OCR: OpenAI-compatible vision adapter when configured
+free remote VLM: OpenRouter registry currently exposes free text+image->text models; automatic route wiring is not integrated yet
+configured-online VLM/OCR: OpenAI-compatible vision adapter when configured through current provider-alias path
 ```
 
 ### Cleanup
