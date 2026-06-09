@@ -26,6 +26,7 @@ class VisualOperation(BaseModel):
     name: ActionName
     route: OperationRoute = "deterministic"
     provider_id: str | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 def baseline_visual_operations() -> list[VisualOperation]:
@@ -251,7 +252,7 @@ def _operation(operations: list[VisualOperation], name: ActionName) -> VisualOpe
 
 
 def _operation_action(operation: VisualOperation) -> AcquisitionAction:
-    params: dict[str, str] = {}
+    params: dict[str, Any] = dict(operation.params)
     if operation.route != "deterministic":
         params["route"] = operation.route
     if operation.provider_id is not None:

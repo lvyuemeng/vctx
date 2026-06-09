@@ -144,13 +144,11 @@ cost = "paid"                    # free | paid | local | unknown
 upload = "required"              # online ASR uploads media/audio
 
 [transforms.visual_context]
-model = "auto"                   # infer best available route
+model = "openrouter:nex-agi/nex-n2-pro:free"  # prefix-resolved VLM for frame descriptions
 
-[transforms.visual_description]
-model = "openrouter:nex-agi/nex-n2-pro:free"
-
-[transforms.essential_cases]
-model = "auto"                   # OpenRouter free route when key exists, otherwise deterministic fallback
+# Future split if visual sub-capabilities need independent policies:
+# [transforms.essential_cases]
+# model = "auto"                 # OpenRouter free route when key exists, otherwise deterministic fallback
 ```
 
 Legacy policy fields such as `route`, `allow_upload`, `allow_paid`, `preferred_provider`, and `[providers.*]` may exist internally while the planner is being refactored, but normal public config should prefer decisive model/resource references over provider blocks. Local vs online is inferred from the model reference shape:
@@ -183,7 +181,7 @@ Field semantics:
 | `instances.asr.<name>.cache` | Legacy/internal override. Public config should usually omit it; managed cache is the default for model ids, and local paths are local-only automatically. |
 | `instances.asr.<name>.api_key_env` | Environment variable containing a credential. The config stores only the variable name. |
 | `instances.asr.<name>.cost` / `upload` | Positive evidence fields used for manifest/planning. Explicitly choosing a paid/uploading instance means the user selected that instance. |
-| `providers.vision.<name>.*` | Advanced/legacy provider alias escape hatch. Current implemented value: `openai-compatible-vision`, using chat-completions style image messages. Normal config should use `transforms.visual_description.model` instead. |
+| `providers.vision.<name>.*` | Advanced/legacy provider alias escape hatch. Current implemented value: `openai-compatible-vision`, using chat-completions style image messages. Normal config should use `transforms.visual_context.model = "openrouter:<model-id>"` when possible. |
 | `providers.vision.<name>.api_key_env` | Environment variable containing the VLM credential for the advanced provider alias path; values can come from shell env or `runtime.env_files`. |
 
 Configured online ASR is selected only when an online instance is explicitly selected or project defaults choose it, required credentials are present, and the manifest can record upload/cost evidence.

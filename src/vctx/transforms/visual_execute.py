@@ -91,6 +91,8 @@ def _description_records(
         raise VisualExecutionError("describe action is missing provider_id")
     provider = vision_providers.get(provider_id)
     if provider is None:
+        provider = _provider_from_action(action)
+    if provider is None:
         raise VisualExecutionError(f"describe provider is not configured: {provider_id}")
     adapter = OpenAiCompatibleVisionAdapter(
         provider=provider,
@@ -116,6 +118,24 @@ def _description_records(
             )
         )
     return records
+
+
+def _provider_from_action(action: AcquisitionAction) -> ProviderConfig | None:
+    if action.params.get("provider_type") != "openai-compatible-vision":
+        return None
+    base_url = action.params.get("base_url")
+    api_key_env = action.params.get("api_key_env")
+    model = action.params.get("model")
+    cost = action.params.get("cost", "unknown")
+    if not isinstance(base_url, str) or not isinstance(model, str):
+        return None
+    return ProviderConfig(
+        type="openai-compatible-vision",
+        base_url=base_url,
+        api_key_env=api_key_env if isinstance(api_key_env, str) else None,
+        model=model,
+        cost_mode=cost if cost in {"free", "paid", "local", "unknown"} else "unknown",
+    )
 
 
 def _capture_records(frames: list[FrameAsset], out_dir: Path) -> list[VisualRecord]:
