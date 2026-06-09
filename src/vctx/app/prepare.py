@@ -36,6 +36,7 @@ from vctx.transforms.asr import AsrExecutionError, run_asr
 from vctx.transforms.openrouter_registry import load_openrouter_models
 from vctx.transforms.planning import SourceState, TransformEnvironment, plan_asr
 from vctx.transforms.visual_cases import deterministic_essential_cases
+from vctx.transforms.visual_evidence import score_visual_records
 from vctx.transforms.visual_execute import VisualExecutionError, run_visual_context
 from vctx.transforms.visual_planning import (
     VisualAssessment,
@@ -229,10 +230,11 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
             except VisualExecutionError as visual_exc:
                 manifest.add_step("transform.visual_capture", "warning", str(visual_exc))
             else:
+                visual_records = score_visual_records(visual_records.records, clean)
                 manifest.add_step(
                     "transform.visual_capture",
                     "ok",
-                    f"{len(visual_records.records)} records",
+                    _visual_capture_detail(visual_records),
                 )
                 visual_frame_refs = _visual_frame_refs(visual_records)
         else:
@@ -288,6 +290,16 @@ def _openrouter_models_for_visual_policy(resolved: ResolvedConfig, cache_root: P
     if not policy.allow_network:
         return None
     return load_openrouter_models(cache_root, offline=resolved.runtime.offline)
+
+
+def _visual_capture_detail(visual_records: VisualRecordSet) -> str:
+    kept = sum(
+        1 for record in visual_records.records if record.score is None or record.score.keep
+    )
+    dropped = len(visual_records.records) - kept
+    if dropped:
+        return f"{len(visual_records.records)} records ({kept} kept, {dropped} low-novelty)"
+    return f"{len(visual_records.records)} records"
 
 
 def _visual_frame_refs(visual_records: VisualRecordSet) -> list[ArtifactRef]:

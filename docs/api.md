@@ -222,7 +222,7 @@ prepare INPUT
        -> choose evidence-guided acquisition strategy: transcript-aligned anchors, sparse cover, aspect probes, or bounded hybrid
        -> choose extraction intent per selected frame: OCR, visual description, and/or source image capture
        -> route default OCR/frame-description
-       -> timestamped visual records + transform evidence
+       -> timestamped visual records + novelty/uncertainty scores + transform evidence
   -> if chapter policy enables chapters:
        -> route default chapter candidates
        -> chapter candidates + transform evidence

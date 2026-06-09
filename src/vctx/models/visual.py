@@ -19,6 +19,23 @@ class FrameAsset(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list)
 
 
+class VisualUncertainty(BaseModel):
+    prior_uncertainty: float = 0.0
+    posterior_uncertainty: float = 0.0
+    reduction: float = 0.0
+    missing_referents: list[str] = Field(default_factory=list)
+    resolved_referents: list[str] = Field(default_factory=list)
+
+
+class VisualEvidenceScore(BaseModel):
+    keep: bool
+    novelty_score: float = 0.0
+    overlap_score: float = 0.0
+    grounding_score: float = 0.0
+    reason: str
+    uncertainty: VisualUncertainty = Field(default_factory=VisualUncertainty)
+
+
 class VisualRecord(BaseModel):
     id: str
     timestamp_seconds: float | None = None
@@ -27,6 +44,7 @@ class VisualRecord(BaseModel):
     text: str | None = None
     artifact_path: str | None = None
     evidence: list[Evidence] = Field(default_factory=list)
+    score: VisualEvidenceScore | None = None
 
 
 class VisualRecordSet(BaseModel):

@@ -32,16 +32,27 @@ def render_context_markdown(
         "",
     ]
     if visual_records is not None and visual_records.records:
-        lines.extend(["## Visual records", ""])
-        for record in visual_records.records:
-            timestamp = (
-                format_timestamp(record.timestamp_seconds)
-                if record.timestamp_seconds is not None
-                else "unknown"
-            )
-            detail = record.text or record.artifact_path or record.frame_id
-            lines.extend([f"- [{timestamp}] {record.kind}: {detail}"])
-        lines.append("")
+        renderable_records = [
+            record
+            for record in visual_records.records
+            if record.score is None or record.score.keep
+        ]
+        if renderable_records:
+            lines.extend(["## Visual records", ""])
+            for record in renderable_records:
+                timestamp = (
+                    format_timestamp(record.timestamp_seconds)
+                    if record.timestamp_seconds is not None
+                    else "unknown"
+                )
+                detail = record.text or record.artifact_path or record.frame_id
+                score = (
+                    f" (novelty {record.score.novelty_score:.2f})"
+                    if record.score is not None and record.kind != "capture"
+                    else ""
+                )
+                lines.extend([f"- [{timestamp}] {record.kind}: {detail}{score}"])
+            lines.append("")
     lines.extend([
         "## Chunks",
         "",
