@@ -204,8 +204,40 @@ All transformations should preserve provenance:
 - source input
 - provider/tool/model, when applicable
 - timestamps, when available
-- confidence or warning information, when meaningful
+- numeric scores, cautions, or warning information, when meaningful
 - whether content is source text, machine transcript, OCR text, or generated description
+
+### 4.1 Visual acquisition contract
+
+Visual acquisition is not a single class-inference step. It is a small planning workflow:
+
+```text
+observed evidence -> numeric assessment -> ordered acquisition recipe
+```
+
+The architecture should avoid global source-class enums such as `podcast`, `slides`, or `diagram` as the main decision output. Those labels can appear as evidence names, but the durable contract is a composable set of observations and actions.
+
+The core visual planner owns only pure assessment:
+
+```text
+Evidence[]
+  -> visual_yield: 0.0..1.0
+  -> audio_sufficiency: 0.0..1.0
+  -> AcquisitionAction[]
+```
+
+Frame probing, OCR, VLM calls, and optional LLM/VLM judging are edge behaviors. They may add more evidence, but they must not replace the core contract or leak provider payloads into rendering.
+
+A visual acquisition recipe is an ordered operation list:
+
+```text
+sample(...)
+ocr()
+describe()
+capture()
+```
+
+This lets visual workflows compose without boolean trigger sprawl. For example, a slide lecture can produce `sample + ocr + capture`, while a formula-heavy segment can produce `sample + ocr + describe + capture`, and an audio-sufficient podcast can produce only `sample cover + capture`.
 
 ### 5. Normalization
 

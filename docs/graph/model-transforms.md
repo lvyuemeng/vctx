@@ -248,60 +248,175 @@ free-online adapter: only if project registry contains stable no-auth/no-cost ro
 
 ### Visual context
 
-Visual context uses one small composable contract:
+Visual planning API currently lives in:
 
 ```text
-evidence -> assessment -> recipe
+src/vctx/transforms/visual_planning.py
 ```
 
-`evidence` is a weighted list of observations from metadata, transcript clues, frame probes, OCR probes, or an optional model judge. The core planner does not need to know which detector produced the observation.
+Public types:
 
-`assessment` is numeric and comparable, not enum confidence:
+```python
+EvidenceKind = Literal["metadata", "transcript", "frame", "probe"]
+ActionName = Literal["sample", "ocr", "describe", "capture"]
 
-```text
-visual_yield      0.0..1.0  how much source information visuals add
-audio_sufficiency 0.0..1.0  how sufficient transcript/audio appears
+class Evidence(BaseModel):
+    kind: EvidenceKind
+    name: str
+    weight: float = 1.0        # clamped to 0.0..1.0
+
+class VisualSourceSignals(BaseModel):
+    has_video: bool = False
+    duration_seconds: float | None = None
+    title: str | None = None
+    description: str | None = None
+    transcript_timestamps: bool = False
+    evidence: list[Evidence] = []
+
+class AcquisitionAction(BaseModel):
+    name: ActionName
+    params: dict[str, Any] = {}
+
+class VisualAssessment(BaseModel):
+    visual_yield: float
+    audio_sufficiency: float
+    recipe: list[AcquisitionAction] = []
+    evidence: list[Evidence] = []
+    rationale: str
+    cautions: list[str] = []
 ```
 
-`recipe` is an ordered list of acquisition actions, not scattered booleans:
+Public call:
+
+```python
+def plan_visual_acquisition(signals: VisualSourceSignals) -> VisualAssessment
+```
+
+Concrete data flow:
 
 ```text
-sample(strategy="cover" | "changes" | "changes+anchors", budget=N, min_gap_s=S)
+metadata/transcript/probe observations
+  -> Evidence[]
+  -> VisualSourceSignals
+  -> plan_visual_acquisition(...)
+  -> VisualAssessment
+       visual_yield
+       audio_sufficiency
+       recipe: AcquisitionAction[]
+       evidence: Evidence[]
+       rationale
+       cautions
+```
+
+Recipe grammar:
+
+```text
+sample(strategy="cover", budget=1)
+sample(strategy="changes", budget=N, min_gap_s=S)
+sample(strategy="changes+anchors", budget=N, min_gap_s=S)
 ocr()
 describe()
 capture()
 ```
 
-Examples:
+Current deterministic evidence derivation:
 
 ```text
-podcast evidence
-  -> visual_yield near 0
-  -> sample cover + capture only
+title/description contains podcast|interview|audio only
+  -> Evidence(kind="metadata", name="audio-complete", weight=0.7)
 
-slide/screen evidence
-  -> high visual_yield
-  -> sample changes+anchors + ocr + capture
+title/description contains lecture|slides|presentation|ppt
+  -> dense-text + visual-reference evidence
 
-diagram/formula/layout evidence
-  -> high visual_yield
-  -> sample changes+anchors + ocr + describe + capture
+title/description contains screen|demo|coding|walkthrough
+  -> screen-content + dense-text evidence
+
+title/description contains diagram|architecture|flowchart|graph
+  -> diagram-reference evidence
+
+title/description contains formula|equation|proof|derivation
+  -> formula-reference evidence
 ```
 
-The first execution layer can be deterministic. Later, a free/configured LLM or VLM can simply add more `Evidence` items or validate an `assessment`; it should not replace the contract.
+Example outputs:
 
-```text
-plan_visual_acquisition(signals)
-  -> VisualAssessment(recipe=[...])
+```python
+# audio-sufficient source
+VisualAssessment(
+    visual_yield=0.0,
+    audio_sufficiency=0.95,
+    recipe=[
+        AcquisitionAction(name="sample", params={"strategy": "cover", "budget": 1}),
+        AcquisitionAction(name="capture"),
+    ],
+)
 
-plan_visual_context(policy, environment, source_state)
-  -> choose executable OCR/VLM route for the actions in the recipe
+# slide/screen source
+VisualAssessment(
+    visual_yield=0.9,
+    recipe=[
+        AcquisitionAction(
+            name="sample",
+            params={"strategy": "changes+anchors", "budget": 40, "min_gap_s": 8},
+        ),
+        AcquisitionAction(name="ocr"),
+        AcquisitionAction(name="capture"),
+    ],
+)
 
-run_visual_context(plan, frame_assets, cache)
-  -> selected adapter performs OCR and/or visual description
-  -> returns VisualRecord[]
-  -> evidence labels generated descriptions vs source text
+# formula/layout-heavy source
+VisualAssessment(
+    visual_yield=0.95,
+    recipe=[
+        AcquisitionAction(
+            name="sample",
+            params={"strategy": "changes+anchors", "budget": 15, "min_gap_s": 5},
+        ),
+        AcquisitionAction(name="ocr"),
+        AcquisitionAction(name="describe"),
+        AcquisitionAction(name="capture"),
+    ],
+    cautions=["description is model output; keep source frames"],
+)
 ```
+
+Planned execution APIs consume the recipe rather than re-inferring source class:
+
+```python
+class FrameAsset(BaseModel):
+    id: str
+    timestamp_seconds: float | None
+    path: Path
+    source: Literal["cover", "scene_change", "transcript_anchor", "probe"]
+    evidence: list[Evidence]
+
+class VisualRecord(BaseModel):
+    id: str
+    timestamp_seconds: float | None
+    frame_id: str
+    kind: Literal["ocr", "description", "capture"]
+    text: str | None
+    artifact_path: Path | None
+    evidence: list[Evidence]
+
+
+def make_visual_probe_plan(metadata, transcript) -> list[AcquisitionAction]
+def extract_frames(media_asset, sample_action, cache) -> list[FrameAsset]
+def run_visual_context(
+    assessment: VisualAssessment,
+    frame_assets: list[FrameAsset],
+    cache,
+) -> TransformResult[list[VisualRecord]]
+```
+
+Optional model judge contract:
+
+```python
+class VisualJudgeAdapter(Protocol):
+    def judge(self, bundle: VisualDiagnosisBundle) -> list[Evidence]: ...
+```
+
+The judge may add `Evidence`; it must not return provider-specific plans. This keeps free/configured LLM/VLM calls optional, inspectable, and replaceable.
 
 Sampling goal: maximize new source information per frame, not uniform frame coverage. Frame extraction should combine visual-change candidates with transcript anchors when useful, enforce a minimum interval, and drop near-duplicates before OCR/VLM calls.
 
