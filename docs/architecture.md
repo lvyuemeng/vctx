@@ -220,11 +220,13 @@ The architecture should avoid global source-class enums such as `podcast`, `slid
 The core visual planner owns only pure assessment:
 
 ```text
-Evidence[]
+Evidence[] + available VisualOperation[]
   -> visual_yield: 0.0..1.0
   -> audio_sufficiency: 0.0..1.0
   -> AcquisitionAction[]
 ```
+
+`VisualOperation[]` is the bridge from environment/route selection to recipe construction. It lists operations that are actually executable in this run, such as deterministic sampling/capture, local OCR, or configured/free online description. The planner must not emit an unavailable operation and then rely on the executor to skip it with a warning.
 
 Frame probing, OCR, VLM calls, and optional LLM/VLM judging are edge behaviors. They may add more evidence, but they must not replace the core contract or leak provider payloads into rendering.
 

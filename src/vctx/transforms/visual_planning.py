@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 EvidenceKind = Literal["metadata", "transcript", "frame", "probe"]
 ActionName = Literal["sample", "ocr", "describe", "capture"]
+OperationRoute = Literal["deterministic", "local", "free-online", "configured-online"]
 
 
 class Evidence(BaseModel):
@@ -19,12 +20,23 @@ class Evidence(BaseModel):
         return _clamp(value)
 
 
+class VisualOperation(BaseModel):
+    name: ActionName
+    route: OperationRoute = "deterministic"
+    provider_id: str | None = None
+
+
+def baseline_visual_operations() -> list[VisualOperation]:
+    return [VisualOperation(name="sample"), VisualOperation(name="capture")]
+
+
 class VisualSourceSignals(BaseModel):
     has_video: bool = False
     duration_seconds: float | None = None
     title: str | None = None
     description: str | None = None
     transcript_timestamps: bool = False
+    operations: list[VisualOperation] = Field(default_factory=baseline_visual_operations)
     evidence: list[Evidence] = Field(default_factory=list)
 
 
@@ -57,27 +69,35 @@ def plan_visual_acquisition(signals: VisualSourceSignals) -> VisualAssessment:
         )
 
     if visual <= 0.15 and audio >= 0.75:
+        recipe = []
+        if _operation(signals.operations, "sample") is not None:
+            recipe.append(
+                AcquisitionAction(name="sample", params={"strategy": "cover", "budget": 1})
+            )
+        if _operation(signals.operations, "capture") is not None:
+            recipe.append(AcquisitionAction(name="capture"))
         return VisualAssessment(
             visual_yield=0.0,
             audio_sufficiency=audio,
-            recipe=[
-                AcquisitionAction(name="sample", params={"strategy": "cover", "budget": 1}),
-                AcquisitionAction(name="capture"),
-            ],
+            recipe=recipe,
             evidence=evidence,
             rationale="audio is sufficient; keep only a visual provenance cover",
         )
 
-    recipe = [
-        AcquisitionAction(
-            name="sample",
-            params=_sample_params(signals, evidence),
+    recipe = []
+    if _operation(signals.operations, "sample") is not None:
+        recipe.append(
+            AcquisitionAction(
+                name="sample",
+                params=_sample_params(signals, evidence),
+            )
         )
-    ]
-    recipe.extend(_extraction_actions(evidence))
+    recipe.extend(_extraction_actions(evidence, signals.operations))
 
     cautions = []
-    if _score(evidence, {"layout-heavy", "formula-reference", "diagram-reference"}) > 0:
+    if _operation(signals.operations, "describe") is not None and _score(
+        evidence, {"layout-heavy", "formula-reference", "diagram-reference"}
+    ) > 0:
         cautions.append("description is model output; keep source frames")
 
     return VisualAssessment(
@@ -161,14 +181,35 @@ def _sample_params(
     }
 
 
-def _extraction_actions(evidence: list[Evidence]) -> list[AcquisitionAction]:
+def _extraction_actions(
+    evidence: list[Evidence], operations: list[VisualOperation]
+) -> list[AcquisitionAction]:
     actions: list[AcquisitionAction] = []
-    if _score(evidence, {"dense-text", "screen-content", "layout-heavy"}) > 0:
-        actions.append(AcquisitionAction(name="ocr"))
-    if _score(evidence, {"layout-heavy", "diagram-reference", "formula-reference"}) > 0:
-        actions.append(AcquisitionAction(name="describe"))
-    actions.append(AcquisitionAction(name="capture"))
+    ocr = _operation(operations, "ocr")
+    if ocr is not None and _score(evidence, {"dense-text", "screen-content", "layout-heavy"}) > 0:
+        actions.append(_operation_action(ocr))
+    describe = _operation(operations, "describe")
+    if describe is not None and _score(
+        evidence, {"layout-heavy", "diagram-reference", "formula-reference"}
+    ) > 0:
+        actions.append(_operation_action(describe))
+    capture = _operation(operations, "capture")
+    if capture is not None:
+        actions.append(_operation_action(capture))
     return actions
+
+
+def _operation(operations: list[VisualOperation], name: ActionName) -> VisualOperation | None:
+    return next((operation for operation in operations if operation.name == name), None)
+
+
+def _operation_action(operation: VisualOperation) -> AcquisitionAction:
+    params: dict[str, str] = {}
+    if operation.route != "deterministic":
+        params["route"] = operation.route
+    if operation.provider_id is not None:
+        params["provider_id"] = operation.provider_id
+    return AcquisitionAction(name=operation.name, params=params)
 
 
 def _score(evidence: list[Evidence], names: set[str]) -> float:

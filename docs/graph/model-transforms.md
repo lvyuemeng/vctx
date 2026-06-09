@@ -259,11 +259,20 @@ Public types:
 ```python
 EvidenceKind = Literal["metadata", "transcript", "frame", "probe"]
 ActionName = Literal["sample", "ocr", "describe", "capture"]
+OperationRoute = Literal["deterministic", "local", "free-online", "configured-online"]
 
 class Evidence(BaseModel):
     kind: EvidenceKind
     name: str
     weight: float = 1.0        # clamped to 0.0..1.0
+
+class VisualOperation(BaseModel):
+    name: ActionName
+    route: OperationRoute = "deterministic"
+    provider_id: str | None = None
+
+
+def baseline_visual_operations() -> list[VisualOperation]
 
 class VisualSourceSignals(BaseModel):
     has_video: bool = False
@@ -271,6 +280,10 @@ class VisualSourceSignals(BaseModel):
     title: str | None = None
     description: str | None = None
     transcript_timestamps: bool = False
+    operations: list[VisualOperation] = [
+        VisualOperation(name="sample"),
+        VisualOperation(name="capture"),
+    ]
     evidence: list[Evidence] = []
 
 class AcquisitionAction(BaseModel):
@@ -297,6 +310,9 @@ Concrete data flow:
 ```text
 metadata/transcript/probe observations
   -> Evidence[]
+environment/config route discovery
+  -> VisualOperation[]        # only executable operations for this run
+Evidence[] + VisualOperation[]
   -> VisualSourceSignals
   -> plan_visual_acquisition(...)
   -> VisualAssessment
@@ -314,9 +330,41 @@ Recipe grammar:
 sample(strategy="cover", budget=1)
 sample(strategy="changes", budget=N, min_gap_s=S)
 sample(strategy="changes+anchors", budget=N, min_gap_s=S)
-ocr()
-describe()
+ocr(route="local", provider_id="rapidocr-onnxruntime")
+describe(route="free-online" | "configured-online", provider_id="...")
 capture()
+```
+
+Non-error availability rule:
+
+```text
+available operations shape the recipe before execution.
+```
+
+If no OCR operation exists, the recipe does not include `ocr()`. If no VLM/description operation exists, the recipe does not include `describe()`. The executor should not receive unavailable actions and then issue fallback warnings. It executes the recipe it was given. Lossless provenance is maintained by `capture()`, not by warning-driven skip behavior.
+
+Route bridge examples:
+
+```python
+# deterministic baseline, always safe when video exists
+[
+    VisualOperation(name="sample"),
+    VisualOperation(name="capture"),
+]
+
+# local OCR route available
+[
+    VisualOperation(name="sample"),
+    VisualOperation(name="ocr", route="local", provider_id="rapidocr-onnxruntime"),
+    VisualOperation(name="capture"),
+]
+
+# configured/free VLM route available
+[
+    VisualOperation(name="sample"),
+    VisualOperation(name="describe", route="configured-online", provider_id="default-vision"),
+    VisualOperation(name="capture"),
+]
 ```
 
 Current deterministic evidence derivation:
@@ -380,7 +428,7 @@ VisualAssessment(
 )
 ```
 
-Planned execution APIs consume the recipe rather than re-inferring source class:
+Planned execution APIs consume the already-shaped recipe rather than re-inferring source class or checking for missing adapters:
 
 ```python
 class FrameAsset(BaseModel):
@@ -400,6 +448,10 @@ class VisualRecord(BaseModel):
     evidence: list[Evidence]
 
 
+def discover_visual_operations(policy, environment) -> list[VisualOperation]:
+    """Return only operations executable in this run."""
+
+
 def make_visual_probe_plan(metadata, transcript) -> list[AcquisitionAction]
 def extract_frames(media_asset, sample_action, cache) -> list[FrameAsset]
 def run_visual_context(
@@ -408,6 +460,26 @@ def run_visual_context(
     cache,
 ) -> TransformResult[list[VisualRecord]]
 ```
+
+Concrete bridge:
+
+```text
+discover_visual_operations(...)
+  -> sample + capture always when video is available
+  -> add ocr only when local/free/configured OCR route is executable
+  -> add describe only when free/configured VLM route is executable
+  -> VisualOperation[]
+
+plan_visual_acquisition(VisualSourceSignals(..., operations=ops))
+  -> recipe contains only executable actions
+
+run_visual_context(assessment, frames, cache)
+  -> executes every action in recipe
+  -> no "describe skipped because VLM missing" branch
+  -> no "ocr skipped because rapidocr missing" branch
+```
+
+Adapter absence is handled before planning by not adding the operation. If visual evidence asks for layout/formula understanding but no description route exists, `capture()` still preserves source frames; no skipped-description warning is necessary.
 
 Optional model judge contract:
 
