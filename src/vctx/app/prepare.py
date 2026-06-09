@@ -90,7 +90,13 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
             manifest.warn("ASR instance is not configured")
             return _write_metadata_partial_result(request, manifest, metadata)
         try:
-            payload = run_asr(asr_plan, media_asset, instance=instance)
+            payload = run_asr(
+                asr_plan,
+                media_asset,
+                instance=instance,
+                cache_root=cache.root,
+                offline=resolved.runtime.offline,
+            )
         except AsrExecutionError as asr_exc:
             manifest.add_step("transform.asr", "warning", str(asr_exc))
             manifest.warn(str(asr_exc))

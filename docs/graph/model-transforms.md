@@ -149,8 +149,10 @@ Current ASR execution status:
 
 ```text
 run_asr exists for local-faster-whisper instance dispatch.
-FasterWhisperAsrAdapter exists as the adapter boundary.
-Real faster-whisper model loading/transcription is still pending.
+FasterWhisperAsrAdapter loads faster_whisper.WhisperModel when the optional ASR extra is installed.
+Persistent cache uses runtime.cache_dir/models/faster-whisper.
+offline=true maps to local_files_only=True so model downloads are blocked.
+cache="disabled" requires model to be a local path, avoiding hidden global model downloads.
 ```
 
 ```text

@@ -103,7 +103,7 @@ Missing or incomplete:
   run_chapters
   ```
 
-- `run_asr()` exists only for the local `local-faster-whisper` instance boundary; the real faster-whisper transcription implementation is not wired yet.
+- `run_asr()` exists for the local `local-faster-whisper` instance. Real transcription is implemented through the optional `faster-whisper` package when the ASR extra is installed.
 
 - Adapter protocols/classes are not implemented:
 
@@ -144,7 +144,8 @@ Implemented ASR execution slice:
 - `MediaAsset` model exists.
 - Local media files can be detected and exposed as `MediaAsset`.
 - `run_asr()` exists for the local `local-faster-whisper` instance boundary.
-- `FasterWhisperAsrAdapter` class exists, with real transcription still guarded by an execution error until the ASR extra/model code lands.
+- `FasterWhisperAsrAdapter` class performs real transcription when the optional ASR extra is installed; without the extra it raises an actionable error.
+- Persistent model cache and offline/no-download behavior are unit-tested.
 - `prepare` can fall back from missing local-media transcript to ASR and then continue through parse/normalize/chunk/render.
 
 ### `docs/graph/manifest.md`
@@ -482,7 +483,16 @@ Real network verification is optional and manual:
 VCTX_SMOKE_VIDEO_URL="https://..." uv run python scripts/smoke_url_subtitles.py
 ```
 
-Do not put a public video URL into normal tests by default. Captions, rate limits, cookies, geo availability, and extractor behavior change independently of this project.
+Real local ASR verification is also optional because it may install/download `faster-whisper` dependencies and model weights:
+
+```bash
+uv sync --extra asr
+VCTX_ASR_SMOKE_MEDIA="./sample.wav" uv run python scripts/smoke_local_asr.py
+```
+
+The first real ASR run may download a model into the persistent vctx cache. Use `runtime.offline = true` only after the model is already cached or when `model` points to a local model path.
+
+Do not put a public video URL into normal tests by default. Captions, rate limits, cookies, geo availability, model hosting, and extractor behavior change independently of this project.
 
 ### Required behavior when subtitles do not exist
 
