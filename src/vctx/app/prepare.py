@@ -200,12 +200,21 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
                     title=metadata.title,
                     description=None,
                     transcript_timestamps=bool(clean.segments),
-                    operations=discover_visual_operations(resolved.transforms.visual_context),
+                    operations=discover_visual_operations(
+                        resolved.transforms.visual_context,
+                        vision_providers=resolved.providers.vision,
+                    ),
                 )
             )
             manifest.add_step("transform.visual_plan", "ok", _visual_plan_detail(assessment))
             try:
-                visual_records = run_visual_context(assessment, media_asset, request.out_dir)
+                visual_records = run_visual_context(
+                    assessment,
+                    media_asset,
+                    request.out_dir,
+                    vision_providers=resolved.providers.vision,
+                    env_files=resolved.runtime.env_files,
+                )
             except VisualExecutionError as visual_exc:
                 manifest.add_step("transform.visual_capture", "warning", str(visual_exc))
             else:
@@ -294,6 +303,10 @@ def _visual_plan_detail(assessment: VisualAssessment) -> str:
         provider_id = action.params.get("provider_id")
         if action.name == "ocr" and provider_id is not None:
             route_details.append(f"local OCR: {provider_id}")
+        if action.name == "describe" and provider_id is not None:
+            route = action.params.get("route")
+            label = "free VLM" if route == "free-online" else "configured VLM"
+            route_details.append(f"{label}: {provider_id}")
     if route_details:
         return "; ".join(route_details)
     return assessment.rationale

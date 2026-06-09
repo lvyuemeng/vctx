@@ -428,12 +428,13 @@ VisualAssessment(
 )
 ```
 
-Visual execution APIs consume the already-shaped recipe rather than re-inferring source class or checking for missing adapters. The sample+capture+local OCR slice is implemented in:
+Visual execution APIs consume the already-shaped recipe rather than re-inferring source class or checking for missing adapters. The sample+capture+local OCR+configured VLM slice is implemented in:
 
 ```text
 src/vctx/models/visual.py
 src/vctx/transforms/visual_frames.py
 src/vctx/transforms/visual_ocr.py
+src/vctx/transforms/visual_vlm.py
 src/vctx/transforms/visual_routes.py
 src/vctx/transforms/visual_execute.py
 ```
@@ -461,7 +462,11 @@ class VisualRecordSet(BaseModel):
     records: list[VisualRecord] = []
 
 
-def discover_visual_operations(policy: CapabilityPolicy) -> list[VisualOperation]
+def discover_visual_operations(
+    policy: CapabilityPolicy,
+    *,
+    vision_providers: dict[str, ProviderConfig] | None = None,
+) -> list[VisualOperation]
 
 
 def extract_frames(
@@ -475,6 +480,9 @@ def run_visual_context(
     assessment: VisualAssessment,
     media_asset: MediaAsset,
     out_dir: Path,
+    *,
+    vision_providers: dict[str, ProviderConfig] | None = None,
+    env_files: list[Path] | None = None,
 ) -> VisualRecordSet
 ```
 
@@ -522,8 +530,8 @@ Concrete default stack:
 local OCR adapter: rapidocr-onnxruntime
 frame extraction: ffmpeg canonical PNG output; pillow utilities later; opencv-python-headless only when needed
 local VLM adapter: none by default
-free-online VLM/OCR: preferred when stable and materially better
-configured-online VLM/OCR: plain HTTP adapter when configured
+free-online VLM/OCR: preferred when stable and materially better; no built-in discovery yet
+configured-online VLM/OCR: OpenAI-compatible vision adapter when configured
 ```
 
 ### Cleanup

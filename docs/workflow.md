@@ -26,7 +26,7 @@ vctx render    existing metadata/transcript/chunks JSON -> Markdown
 vctx doctor    local environment report
 ```
 
-The current implementation is strongest for deterministic transcript/subtitle workflows and ASR fallback. It has config resolution, transform route planning, local faster-whisper ASR, configured OpenAI-compatible ASR, URL media download for ASR, transform evidence in manifests, and explicit visual/full workflow capture plus local RapidOCR text extraction when `rapidocr-onnxruntime` is installed. VLM description, cleanup, and chapter model-mediated execution paths in `docs/graph/model-transforms.md` remain mostly planned.
+The current implementation is strongest for deterministic transcript/subtitle workflows and ASR fallback. It has config resolution, transform route planning, local faster-whisper ASR, configured OpenAI-compatible ASR, URL media download for ASR, transform evidence in manifests, and explicit visual/full workflow capture plus local RapidOCR text extraction and configured OpenAI-compatible VLM descriptions. Cleanup and chapter model-mediated execution paths in `docs/graph/model-transforms.md` remain mostly planned.
 
 ## Missing functionality by graph module
 
@@ -99,7 +99,7 @@ Missing or incomplete:
 
   ```text
   run_asr
-  run_visual_context      # sample + capture + local RapidOCR slice
+  run_visual_context      # sample + capture + local RapidOCR + configured VLM slice
   ```
 
 - Execution APIs not implemented:
@@ -115,6 +115,7 @@ Missing or incomplete:
 
   ```text
   RapidOcrAdapter
+  OpenAiCompatibleVisionAdapter
   ```
 
 - Adapter protocols/classes are not implemented:
@@ -130,7 +131,6 @@ Missing or incomplete:
 
   ```text
   free_online_vision
-  configured_online_vision
   configured/free text cleanup
   chapter suggestion
   ```
@@ -230,8 +230,8 @@ Implemented:
 
 Missing or incomplete:
 
-- Renderers include visual capture records, OCR text records, and frame artifact references when explicit visual/full workflows produce them.
-- Renderers do not yet include VLM descriptions, chapters, transform evidence, or partial-run warnings.
+- Renderers include visual capture records, OCR text records, VLM description records, and frame artifact references when explicit visual/full workflows produce them.
+- Renderers do not yet include chapters, transform evidence, or partial-run warnings.
 
 ### `docs/graph/chunking.md`
 
@@ -323,7 +323,7 @@ Current status:
 | 2 URL subtitle pack | Implemented and fixture-tested; optional network smoke available | `vctx prepare URL --out out` writes full pack when subtitles are available. |
 | 3 metadata-only / partial prepare | Implemented and tested | `workflow=metadata` writes metadata-only partial output; missing subtitles produce metadata partial output. |
 | 4 ASR fallback | Implemented and tested | URL/local media can flow through local faster-whisper or configured OpenAI-compatible ASR; manifest records route evidence. |
-| 5 visual/context enrichment | Local OCR slice implemented | Explicit visual/full workflows can plan sample+OCR+capture when RapidOCR is installed, extract PNG frame artifacts, write `visual_records.json`, and render OCR/frame refs. VLM records are not implemented. |
+| 5 visual/context enrichment | Configured VLM slice implemented | Explicit visual/full workflows can plan sample+OCR+describe+capture when routes are available, extract PNG frame artifacts, write `visual_records.json`, and render OCR/description/frame refs. Rich frame sampling and free-online discovery remain missing. |
 | 6 AI cleanup/chapters | Missing execution | Route planning exists; cleanup/chapter adapters and artifacts do not. |
 
 Later levels should be added without breaking earlier levels.

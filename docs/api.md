@@ -142,6 +142,17 @@ api_key_env = "OPENAI_API_KEY"   # value can come from shell env or runtime.env_
 model = "whisper-1"
 cost = "paid"                    # free | paid | local | unknown
 upload = "required"              # online ASR uploads media/audio
+
+[transforms.visual_context]
+route = "configured-online"
+preferred_provider = "project-vision"
+
+[providers.vision.project-vision]
+type = "openai-compatible-vision"
+base_url = "https://api.openai.com/v1/chat/completions"
+api_key_env = "OPENAI_API_KEY"
+model = "gpt-4o-mini"
+cost_mode = "paid"               # free | paid | local | unknown
 ```
 
 Legacy policy fields such as `route`, `allow_upload`, and `allow_paid` may exist internally while the planner is being refactored, but the public config should prefer named instances. Local vs online is separated by instance type, not by fuzzy booleans:
@@ -169,6 +180,9 @@ Field semantics:
 | `instances.asr.<name>.cache` | Legacy/internal override. Public config should usually omit it; managed cache is the default for model ids, and local paths are local-only automatically. |
 | `instances.asr.<name>.api_key_env` | Environment variable containing a credential. The config stores only the variable name. |
 | `instances.asr.<name>.cost` / `upload` | Positive evidence fields used for manifest/planning. Explicitly choosing a paid/uploading instance means the user selected that instance. |
+| `transforms.visual_context.preferred_provider` | Optional configured vision provider name used when visual description is enabled and the route is `configured-online` or `free-online`. |
+| `providers.vision.<name>.type` | Current implemented value: `openai-compatible-vision`, using chat-completions style image messages. |
+| `providers.vision.<name>.api_key_env` | Environment variable containing the VLM credential; values can come from shell env or `runtime.env_files`. |
 
 Configured online ASR is selected only when an online instance is explicitly selected or project defaults choose it, required credentials are present, and the manifest can record upload/cost evidence.
 
