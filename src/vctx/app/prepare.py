@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from vctx.app.config import (
     CapabilityEnabled,
     PrepareRequest,
@@ -30,6 +33,7 @@ from vctx.sources.detect import detect_source_adapter
 from vctx.subtitles.parse import parse_transcript_payload
 from vctx.transcript.normalize import normalize_transcript
 from vctx.transforms.asr import AsrExecutionError, run_asr
+from vctx.transforms.openrouter_registry import load_openrouter_models
 from vctx.transforms.planning import SourceState, TransformEnvironment, plan_asr
 from vctx.transforms.visual_cases import deterministic_essential_cases
 from vctx.transforms.visual_execute import VisualExecutionError, run_visual_context
@@ -205,6 +209,11 @@ def prepare_context_pack(request: PrepareRequest) -> PrepareResult:
                     operations=discover_visual_operations(
                         resolved.transforms.visual_context,
                         vision_providers=resolved.providers.vision,
+                        env=os.environ,
+                        openrouter_models=_openrouter_models_for_visual_policy(
+                            resolved,
+                            cache.root,
+                        ),
                     ),
                 )
             )
@@ -270,6 +279,15 @@ def _asr_environment(resolved: ResolvedConfig) -> TransformEnvironment:
 
 def _visual_enabled(resolved: ResolvedConfig) -> bool:
     return resolved.transforms.visual_context.enabled == CapabilityEnabled.TRUE
+
+
+def _openrouter_models_for_visual_policy(resolved: ResolvedConfig, cache_root: Path):
+    policy = resolved.transforms.visual_context
+    if policy.model not in {None, "auto"}:
+        return None
+    if not policy.allow_network:
+        return None
+    return load_openrouter_models(cache_root, offline=resolved.runtime.offline)
 
 
 def _visual_frame_refs(visual_records: VisualRecordSet) -> list[ArtifactRef]:

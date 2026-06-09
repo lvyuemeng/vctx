@@ -253,6 +253,132 @@ cache = "persistent"
     }
 
 
+def test_prepare_visual_auto_uses_cached_openrouter_registry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import vctx.transforms.asr as asr_module
+    import vctx.transforms.visual_frames as visual_frames_module
+    import vctx.transforms.visual_vlm as visual_vlm_module
+    from vctx.models.visual import FrameAsset
+    from vctx.transforms.visual_planning import Evidence
+
+    media = tmp_path / "diagram.mp4"
+    media.write_bytes(b"fake mp4 bytes")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-secret")
+    cache_dir = tmp_path / "cache"
+    cache_file = cache_dir / "openrouter" / "models.json"
+    cache_file.parent.mkdir(parents=True)
+    cache_file.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": "cached/free-vlm:free",
+                        "architecture": {
+                            "input_modalities": ["text", "image"],
+                            "output_modalities": ["text"],
+                        },
+                        "pricing": {"prompt": "0", "completion": "0"},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = tmp_path / "vctx.toml"
+    config.write_text(
+        f'''
+[runtime]
+cache_dir = "{cache_dir.as_posix()}"
+
+[transforms.asr]
+instance = "local-default"
+
+[transforms.visual_context]
+model = "auto"
+
+[instances.asr.local-default]
+type = "local-faster-whisper"
+model = "tiny"
+cache = "persistent"
+'''.strip(),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "out"
+
+    def fake_transcribe(self: object, media_asset: object) -> TranscriptPayload:
+        del self, media_asset
+        return TranscriptPayload(
+            text=(
+                "WEBVTT\n\n00:00:10.000 --> 00:00:14.000\n"
+                "This diagram explains the knowledge flow.\n"
+            ),
+            format="vtt",
+            provenance=TranscriptProvenance(
+                method="asr",
+                language="en",
+                format="vtt",
+                provider="faster-whisper",
+            ),
+        )
+
+    def fake_extract_frames(
+        media_asset: object,
+        sample_action: object,
+        frames_dir: Path,
+    ) -> list[FrameAsset]:
+        del media_asset, sample_action
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        frame_path = frames_dir / "frame-0001.png"
+        frame_path.write_bytes(b"fake png bytes")
+        return [
+            FrameAsset(
+                id="frame-0001",
+                timestamp_seconds=12.0,
+                path=frame_path,
+                source="transcript_anchor",
+                evidence=[Evidence(kind="transcript", name="diagram", weight=0.9)],
+            )
+        ]
+
+    seen: dict[str, str | None] = {}
+
+    def fake_describe(self: object, frame: FrameAsset) -> str:
+        del frame
+        provider = cast(Any, self).provider
+        seen["model"] = provider.model
+        return "Auto-selected cached free VLM description."
+
+    monkeypatch.setattr(asr_module.FasterWhisperAsrAdapter, "transcribe", fake_transcribe)
+    monkeypatch.setattr(visual_frames_module, "extract_frames", fake_extract_frames)
+    monkeypatch.setattr(
+        visual_vlm_module.OpenAiCompatibleVisionAdapter,
+        "describe",
+        fake_describe,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "prepare",
+            str(media),
+            "--out",
+            str(out_dir),
+            "--config",
+            str(config),
+            "--workflow",
+            "visual",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert seen == {"model": "cached/free-vlm:free"}
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert _step_detail(manifest, "transform.visual_plan") == (
+        "free VLM: openrouter:cached/free-vlm:free"
+    )
+
+
 def _step_status(manifest: dict[str, Any], name: str) -> str:
     return _step_value(manifest, name, "status")
 

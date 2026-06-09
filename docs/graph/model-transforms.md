@@ -556,7 +556,7 @@ local OCR adapter: rapidocr-onnxruntime
 frame extraction: ffmpeg canonical PNG output; pillow utilities later; opencv-python-headless only when needed
 model reference resolver: implemented for auto, none, openrouter:<model-id>, local:<path-or-id>, hf:<repo-id>, alias:<name>
 local VLM adapter: none by default
-free remote VLM: OpenRouter registry currently exposes free text+image->text models; explicit `openrouter:<model-id>` visual routes are wired into planner/executor; runtime registry fetch/cache for `auto` is not integrated yet
+free remote VLM: OpenRouter registry currently exposes free text+image->text models; explicit `openrouter:<model-id>` and `auto` visual routes are wired into planner/executor; `auto` uses cached/fetched OpenRouter registry metadata when network is allowed
 configured-online VLM/OCR: OpenAI-compatible vision adapter when configured through current provider-alias path
 ```
 

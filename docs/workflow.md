@@ -130,7 +130,6 @@ Missing or incomplete:
 - Concrete adapters/routes are missing or incomplete:
 
   ```text
-  OpenRouter registry fetch/cache for auto free model discovery
   configured/free text cleanup
   chapter suggestion
   ```
@@ -323,7 +322,7 @@ Current status:
 | 2 URL subtitle pack | Implemented and fixture-tested; optional network smoke available | `vctx prepare URL --out out` writes full pack when subtitles are available. |
 | 3 metadata-only / partial prepare | Implemented and tested | `workflow=metadata` writes metadata-only partial output; missing subtitles produce metadata partial output. |
 | 4 ASR fallback | Implemented and tested | URL/local media can flow through local faster-whisper or configured OpenAI-compatible ASR; manifest records route evidence. |
-| 5 visual/context enrichment | Configured VLM + prefix-resolved OpenRouter VLM + deterministic essential-case sampling slices implemented | Explicit visual/full workflows can plan sample+OCR+describe+capture when current provider-alias routes are available, extract PNG frame artifacts, write `visual_records.json`, and render OCR/description/frame refs. Deterministic transcript cues now produce typed essential visual cases, window-deduped `sample(strategy="essential_cases")` anchors, and frame extraction at transcript-anchor timestamps. Prefix resolver can now wire explicit `transforms.visual_context.model = "openrouter:<model-id>"` into visual route discovery/execution. Auto free OpenRouter model selection works from supplied registry metadata but runtime registry fetch/cache is not yet integrated. LLM essential-case extraction remains missing. |
+| 5 visual/context enrichment | Configured VLM + prefix/auto OpenRouter VLM + deterministic essential-case sampling slices implemented | Explicit visual/full workflows can plan sample+OCR+describe+capture when current provider-alias routes are available, extract PNG frame artifacts, write `visual_records.json`, and render OCR/description/frame refs. Deterministic transcript cues now produce typed essential visual cases, window-deduped `sample(strategy="essential_cases")` anchors, and frame extraction at transcript-anchor timestamps. Prefix resolver can wire explicit `transforms.visual_context.model = "openrouter:<model-id>"` into visual route discovery/execution, and `model = "auto"` now uses cached/fetched OpenRouter registry metadata to select a free text+image VLM when `OPENROUTER_API_KEY` exists. LLM essential-case extraction remains missing. |
 | 6 AI cleanup/chapters | Missing execution | Route planning exists; cleanup/chapter adapters and artifacts do not. |
 
 Later levels should be added without breaking earlier levels.

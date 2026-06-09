@@ -144,7 +144,9 @@ cost = "paid"                    # free | paid | local | unknown
 upload = "required"              # online ASR uploads media/audio
 
 [transforms.visual_context]
-model = "openrouter:nex-agi/nex-n2-pro:free"  # prefix-resolved VLM for frame descriptions
+model = "auto"  # cached/fetched OpenRouter registry selects a free VLM when OPENROUTER_API_KEY exists
+# or pin an explicit frame-description model:
+# model = "openrouter:nex-agi/nex-n2-pro:free"
 
 # Future split if visual sub-capabilities need independent policies:
 # [transforms.essential_cases]
@@ -159,7 +161,7 @@ local:<path-or-id>     -> local route, no upload, explicit paths are config-rela
 hf:<repo-id>           -> managed local cache route when a compatible runtime exists
 alias:<name>           -> advanced escape hatch into configured provider aliases
 none                  -> disable that model-mediated transform
-auto                  -> choose the best available route for the capability
+auto                  -> choose the best available route for the capability; visual context fetches/caches OpenRouter registry metadata when network is allowed
 ```
 
 Field semantics:
