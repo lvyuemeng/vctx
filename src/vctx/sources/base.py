@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from vctx.io.cache import Cache
+from vctx.models.media import MediaAsset
 from vctx.models.metadata import VideoMetadata
 from vctx.models.transcript import TranscriptPayload
 
@@ -21,3 +22,11 @@ class SourceAdapter(Protocol):
         preferred_language: str | None,
         cache: Cache,
     ) -> TranscriptPayload: ...
+
+    def extract_media(
+        self,
+        value: str,
+        *,
+        preferred_language: str | None,
+        cache: Cache,
+    ) -> MediaAsset: ...

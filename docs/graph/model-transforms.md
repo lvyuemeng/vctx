@@ -139,10 +139,18 @@ RoutePlan
 Execution APIs perform the bounded transformation selected by a plan.
 
 ```text
-run_asr(plan, media_asset, cache) -> TransformResult[TranscriptPayload]
+run_asr(plan, media_asset, instance) -> TranscriptPayload
 run_visual_context(plan, frame_assets, cache) -> TransformResult[list[VisualRecord]]
 run_cleanup(plan, transcript, cache) -> TransformResult[Transcript]
-run_chapters(plan, chunks, cache) -> TransformResult[list[ChapterCandidate]]
+run_chapters(plan, chunks) -> TransformResult[list[ChapterCandidate]]
+```
+
+Current ASR execution status:
+
+```text
+run_asr exists for local-faster-whisper instance dispatch.
+FasterWhisperAsrAdapter exists as the adapter boundary.
+Real faster-whisper model loading/transcription is still pending.
 ```
 
 ```text

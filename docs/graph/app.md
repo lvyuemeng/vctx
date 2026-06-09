@@ -208,7 +208,9 @@ PrepareRequest
       -> acquire metadata
       -> acquire transcript payload if deterministic source exists
       -> if transcript payload missing:
-           -> transforms.route_transcript_fallback(config.transforms.asr, source_state)
+           -> acquire media asset if source can provide one
+           -> plan_asr(config.transforms.asr, environment, source_state)
+           -> run_asr(plan, media_asset, selected instance) when local ASR route is selected
       -> parse transcript payload
       -> normalize transcript
       -> transforms.run_cleanup_if_needed(config.transforms.cleanup, transcript)

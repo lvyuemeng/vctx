@@ -56,5 +56,6 @@ sources -> app/render/chunking/transcript/transforms
 ## Verification
 - URL metadata can be inspected without full prepare
 - missing subtitles return structured `NoTranscript`
+- local `.wav`, `.mp3`, `.m4a`, `.mp4`, and `.webm` files are detected as media sources for ASR fallback
 - provider payloads are converted at adapter boundary
 - cache writes are explicit

@@ -11,6 +11,7 @@ import yt_dlp
 from vctx.app.errors import NoTranscriptError
 from vctx.io.cache import Cache
 from vctx.models.common import SourceRef
+from vctx.models.media import MediaAsset
 from vctx.models.metadata import VideoMetadata
 from vctx.models.transcript import TranscriptPayload, TranscriptProvenance
 
@@ -69,6 +70,12 @@ class YtDlpSourceAdapter:
                 provider="yt-dlp",
             ),
         )
+
+    def extract_media(
+        self, value: str, *, preferred_language: str | None, cache: Cache
+    ) -> MediaAsset:
+        del preferred_language, cache
+        raise NoTranscriptError(f"media extraction not implemented for URL input: {value}")
 
 
 def _extract_info(value: str) -> dict[str, Any]:

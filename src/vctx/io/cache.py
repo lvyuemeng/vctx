@@ -14,6 +14,6 @@ class Cache(BaseModel):
 
 
 def build_cache(cache_dir: Path | None) -> Cache:
-    root = cache_dir or user_cache_path("vctx")
+    root = cache_dir or user_cache_path("vctx", appauthor=False)
     root.mkdir(parents=True, exist_ok=True)
     return Cache(root=root)

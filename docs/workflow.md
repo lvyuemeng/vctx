@@ -70,7 +70,7 @@ Implemented:
 
 Missing or incomplete:
 
-- `extract_media()` / `MediaAsset` is not implemented. The graph requires source adapters to provide media only when ASR or visual context needs it.
+- `extract_media()` / `MediaAsset` is implemented for local media files (`.wav`, `.mp3`, `.m4a`, `.mp4`, `.webm`).
 - URL/video download for ASR fallback is not implemented.
 - Frame/media acquisition for visual context is not implemented.
 - Source-access errors are not yet normalized into a richer source error taxonomy beyond existing `VctxError` subclasses.
@@ -95,14 +95,15 @@ Implemented:
 
 Missing or incomplete:
 
-- Execution APIs are not implemented:
+- Most execution APIs are not implemented:
 
   ```text
-  run_asr
   run_visual_context
   run_cleanup
   run_chapters
   ```
+
+- `run_asr()` exists only for the local `local-faster-whisper` instance boundary; the real faster-whisper transcription implementation is not wired yet.
 
 - Adapter protocols/classes are not implemented:
 
@@ -132,11 +133,19 @@ Missing or incomplete:
   TransformResult
   VisualRecord
   ChapterCandidate
-  MediaAsset
   FrameAsset
   ```
 
 - Transform evidence is only partially represented by `RoutePlan.evidence_seed`; it is not yet written into manifest steps.
+- A deterministic full CLI integration test covers local media -> fake faster-whisper ASR -> transcript/chunks/context pack.
+
+Implemented ASR execution slice:
+
+- `MediaAsset` model exists.
+- Local media files can be detected and exposed as `MediaAsset`.
+- `run_asr()` exists for the local `local-faster-whisper` instance boundary.
+- `FasterWhisperAsrAdapter` class exists, with real transcription still guarded by an execution error until the ASR extra/model code lands.
+- `prepare` can fall back from missing local-media transcript to ASR and then continue through parse/normalize/chunk/render.
 
 ### `docs/graph/manifest.md`
 
