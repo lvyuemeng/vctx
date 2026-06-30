@@ -4,7 +4,7 @@ import importlib.util
 import os
 from collections.abc import Mapping
 
-from vctx.config import CapabilityEnabled, CapabilityPolicy, VisionInstanceConfig
+from vctx.config import CapabilityPolicy, VisionInstanceConfig
 from vctx.transforms.ai_routes import AiRoute
 from vctx.transforms.model_resolution import (
     ModelCapability,
@@ -28,16 +28,19 @@ def discover_visual_actions(
     ai_routes: list[AiRoute] | None = None,
     env: Mapping[str, str] | None = None,
     openrouter_models: list[OpenRouterModel] | None = None,
+    offline: bool = False,
+    network_available: bool = True,
+    upload_allowed: bool = True,
 ) -> list[VisualAction]:
     actions = baseline_visual_actions()
-    if policy.enabled == CapabilityEnabled.FALSE:
+    if not policy.enabled:
         return actions
-    if policy.route in {"auto", "default", "local"} and rapidocr_available():
+    if policy.auto() and rapidocr_available():
         actions.append(VisualAction.ocr(provider_id=RAPIDOCR_PROVIDER_ID))
     selected_instance_config = _select_vision_instance_config(policy, vision_instance_configs or {})
     if selected_instance_config is not None:
         provider_id, instance_config = selected_instance_config
-        route: ActionRoute = "free-online" if policy.route == "free-online" else "configured-online"
+        route: ActionRoute = "configured-online"
         actions.append(
             VisualAction.describe(
                 AiRoute.configured_alias(
@@ -53,6 +56,9 @@ def discover_visual_actions(
                 )
             )
         )
+        return actions
+
+    if offline or not network_available or not upload_allowed:
         return actions
 
     ai_route = _visual_ai_route(policy, ai_routes or [])
@@ -79,19 +85,12 @@ def _select_vision_instance_config(
     policy: CapabilityPolicy,
     instance_configs: dict[str, VisionInstanceConfig],
 ) -> tuple[str, VisionInstanceConfig] | None:
-    if not policy.allow_network or not policy.allow_upload:
+    selected_instance = policy.instance_name()
+    if selected_instance is None:
         return None
-    if policy.route not in {"auto", "default", "free-online", "configured-online"}:
-        return None
-    selected_instance = policy.instance or policy.preferred_provider
-    if selected_instance is not None:
-        instance_config = instance_configs.get(selected_instance)
-        if instance_config is not None and _vision_instance_config_allowed(policy, instance_config):
-            return selected_instance, instance_config
-        return None
-    for provider_id, instance_config in instance_configs.items():
-        if _vision_instance_config_allowed(policy, instance_config):
-            return provider_id, instance_config
+    instance_config = instance_configs.get(selected_instance)
+    if instance_config is not None and _vision_instance_config_allowed(policy, instance_config):
+        return selected_instance, instance_config
     return None
 
 
@@ -105,22 +104,18 @@ def _vision_instance_config_allowed(
 
 
 def _visual_ai_route(policy: CapabilityPolicy, routes: list[AiRoute]) -> AiRoute | None:
-    if not policy.allow_network or not policy.allow_upload:
-        return None
-    if policy.route not in {"auto", "default", "free-online", "configured-online"}:
+    if policy.instance_name() is not None:
         return None
     for route in routes:
-        if _ai_route_allowed(policy, route):
+        if _ai_route_allowed(route):
             return route
     return None
 
 
-def _ai_route_allowed(policy: CapabilityPolicy, route: AiRoute) -> bool:
+def _ai_route_allowed(route: AiRoute) -> bool:
     if route.task != "vision_description" or not route.available:
         return False
     if route.upload != "required":
-        return False
-    if policy.route == "free-online" and route.cost != "free":
         return False
     return route.selected in {"free-online", "configured-online"}
 
@@ -131,14 +126,13 @@ def _resolved_visual_model(
     env: Mapping[str, str] | None,
     openrouter_models: list[OpenRouterModel] | None,
 ) -> ResolvedModelRoute | None:
-    if not policy.allow_network or not policy.allow_upload:
+    model_ref = policy.model_ref()
+    if model_ref is None and not policy.auto():
         return None
-    if policy.route not in {"auto", "default", "free-online", "configured-online"}:
-        return None
-    if policy.model is None and openrouter_models is None:
+    if model_ref is None and openrouter_models is None:
         return None
     resolved = resolve_model_ref(
-        policy.model,
+        model_ref,
         capability=ModelCapability.VISION_DESCRIPTION,
         env=env or os.environ,
         openrouter_models=openrouter_models,
@@ -146,8 +140,6 @@ def _resolved_visual_model(
     if not resolved.available:
         return None
     if resolved.provider != "openrouter":
-        return None
-    if policy.route == "free-online" and resolved.cost != "free":
         return None
     if resolved.upload != "required":
         return None

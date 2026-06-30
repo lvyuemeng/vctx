@@ -97,6 +97,22 @@ transcript cues
 
 Use `OPENROUTER_API_KEY` only when selecting OpenRouter-backed VLM/text routes. Secrets are read from environment or configured `.env` files and are not written to artifacts.
 
+### Minimal config selector examples
+
+```toml
+[transforms.asr]
+use = "instance:local-default"
+
+[instances.asr.local-default]
+type = "local-faster-whisper"
+model_policy = "auto"
+
+[transforms.visual_context]
+use = "auto"  # or "instance:my-vlm" / "openrouter:<model-id>"
+```
+
+Transform config uses one selector field, `use`. Do not combine old-style `route`, `instance`, and `model` fields; named providers live under `[instances.asr.*]` and `[instances.vision.*]`.
+
 ## What vctx is not
 
 - not an AI chat app

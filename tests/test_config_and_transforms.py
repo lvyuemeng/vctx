@@ -6,7 +6,6 @@ from typer.testing import CliRunner
 
 from vctx.cli import app
 from vctx.config import (
-    CapabilityEnabled,
     PrepareRequest,
     WorkflowProfile,
     resolve_config,
@@ -25,11 +24,9 @@ def test_resolve_config_missing_fields_become_default_auto(tmp_path: Path) -> No
 
     assert resolved.runtime.workflow == WorkflowProfile.DEFAULT
     assert resolved.runtime.offline is False
-    assert resolved.transforms.asr.enabled == CapabilityEnabled.AUTO
-    assert resolved.transforms.asr.route == "auto"
-    assert resolved.transforms.asr.allow_network is True
-    assert resolved.transforms.asr.allow_upload is True
-    assert resolved.transforms.visual_context.enabled == CapabilityEnabled.AUTO
+    assert resolved.transforms.asr.enabled is True
+    assert resolved.transforms.asr.auto()
+    assert resolved.transforms.visual_context.enabled is False
     assert resolved.output.chunk_max_chars == 6000
 
 
@@ -39,9 +36,6 @@ def test_offline_request_disables_network_routes(tmp_path: Path) -> None:
     resolved = resolve_config(request)
 
     assert resolved.runtime.offline is True
-    assert resolved.transforms.asr.allow_network is False
-    assert resolved.transforms.asr.allow_upload is False
-    assert resolved.transforms.visual_context.allow_network is False
 
 
 def test_plan_asr_missing_everything_returns_actionable_unavailable(tmp_path: Path) -> None:
@@ -80,9 +74,9 @@ def test_transcript_workflow_is_decisive_and_disables_enrichment(tmp_path: Path)
     resolved = resolve_config(request)
 
     assert resolved.runtime.workflow == WorkflowProfile.TRANSCRIPT
-    assert resolved.transforms.asr.enabled == CapabilityEnabled.AUTO
-    assert resolved.transforms.visual_context.enabled == CapabilityEnabled.FALSE
-    assert resolved.transforms.knowledge_flow.enabled == CapabilityEnabled.FALSE
+    assert resolved.transforms.asr.enabled is True
+    assert resolved.transforms.visual_context.enabled is False
+    assert resolved.transforms.knowledge_flow.enabled is False
 
 
 def test_prepare_help_uses_decisive_flags_without_negation_pairs() -> None:
@@ -103,7 +97,7 @@ def test_prepare_help_uses_decisive_flags_without_negation_pairs() -> None:
 def test_plan_asr_records_selected_local_model_id(tmp_path: Path) -> None:
     request = PrepareRequest(input="lecture.wav", out_dir=tmp_path / "out")
     resolved = resolve_config(request)
-    policy = resolved.transforms.asr.model_copy(update={"model": "tiny"})
+    policy = resolved.transforms.asr.model_copy(update={"use": "local:tiny"})
     environment = TransformEnvironment(installed_asr=True, configured_asr_model_id="tiny")
     source = SourceState(has_transcript=False, has_media=True)
 
@@ -126,13 +120,7 @@ def test_plan_asr_records_selected_local_model_id(tmp_path: Path) -> None:
 def test_plan_asr_uses_configured_provider_identity(tmp_path: Path) -> None:
     request = PrepareRequest(input="lecture.mp4", out_dir=tmp_path / "out")
     resolved = resolve_config(request)
-    policy = resolved.transforms.asr.model_copy(
-        update={
-            "allow_upload": True,
-            "preferred_provider": "openai-whisper",
-            "model": "whisper-1",
-        }
-    )
+    policy = resolved.transforms.asr.model_copy(update={"use": "instance:openai-whisper"})
     environment = TransformEnvironment(
         configured_asr=True,
         configured_asr_provider_id="openai-whisper",
@@ -163,9 +151,7 @@ def test_plan_asr_accepts_explicit_paid_provider_without_extra_gate(
 ) -> None:
     request = PrepareRequest(input="lecture.mp4", out_dir=tmp_path / "out")
     resolved = resolve_config(request)
-    policy = resolved.transforms.asr.model_copy(
-        update={"allow_upload": True, "preferred_provider": "paid-asr"}
-    )
+    policy = resolved.transforms.asr.model_copy(update={"use": "instance:paid-asr"})
     environment = TransformEnvironment(
         configured_asr=True,
         configured_asr_provider_id="paid-asr",

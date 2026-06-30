@@ -28,7 +28,7 @@ def test_prepare_visual_workflow_runs_available_local_ocr(
     config.write_text(
         """
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"
@@ -148,7 +148,7 @@ def test_prepare_visual_writes_satisfaction_warning_for_missed_formula_ocr(
     config.write_text(
         """
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"

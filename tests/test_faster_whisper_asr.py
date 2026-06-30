@@ -125,6 +125,48 @@ def test_explicit_local_model_path_disables_managed_cache(
     }
 
 
+def test_relative_path_like_model_id_uses_managed_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: dict[str, Any] = {}
+
+    class FakeSegment:
+        start = 0.0
+        end = 1.0
+        text = "managed cache"
+
+    class FakeWhisperModel:
+        def __init__(self, model_id: str, **kwargs: object) -> None:
+            calls["model_id"] = model_id
+            calls["kwargs"] = kwargs
+
+        def transcribe(self, path: str, **kwargs: object) -> tuple[list[FakeSegment], object]:
+            del path, kwargs
+            return [FakeSegment()], object()
+
+    fake_module = types.SimpleNamespace(WhisperModel=FakeWhisperModel)
+    monkeypatch.setattr("importlib.import_module", lambda name: fake_module)
+    media = _media_asset(tmp_path / "lecture.wav")
+    media.local_path.write_bytes(b"fake audio")
+
+    adapter = FasterWhisperAsrAdapter(
+        instance=AsrInstanceConfig(type="local-faster-whisper", model="models/tiny"),
+        model_id="models/tiny",
+        cache_root=tmp_path / "cache",
+        offline=False,
+    )
+
+    adapter.transcribe(media)
+
+    assert calls["model_id"] == "models/tiny"
+    assert calls["kwargs"] == {
+        "compute_type": "default",
+        "device": "auto",
+        "download_root": str(tmp_path / "cache" / "models" / "faster-whisper"),
+        "local_files_only": False,
+    }
+
+
 def test_managed_cache_write_failure_is_actionable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

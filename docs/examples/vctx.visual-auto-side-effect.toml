@@ -14,8 +14,8 @@ media_profile = "balanced"
 subtitle_languages = ["en", "ja", "zh-Hans", "zh-Hant"]
 
 [transforms.visual_context]
-enabled = "true"
+enabled = true
 # OCR remains local RapidOCR auto/default when rapidocr is installed.
 # VLM is separate and optional; auto only resolves when policy, network, upload, and key allow it.
-model = "auto"
-# model = "openrouter:<vision-model-id>"
+use = "auto"
+# use = "openrouter:<vision-model-id>"

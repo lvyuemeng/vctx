@@ -6,7 +6,7 @@ from typing import Literal, Self, assert_never
 
 from pydantic import BaseModel, Field
 
-from vctx.config import CapabilityEnabled, CapabilityPolicy
+from vctx.config import CapabilityPolicy
 from vctx.models.manifest import CapabilityName, TransformEvidence
 from vctx.transforms.model_resolution import (
     ModelCapability,
@@ -177,24 +177,21 @@ def resolve_openrouter_ai_route(
     offline: bool,
     openrouter_models: list[OpenRouterModel] | None = None,
 ) -> AiRoute | None:
-    if policy.enabled != CapabilityEnabled.TRUE:
+    if policy.disabled() or offline:
         return None
-    if not policy.allow_network or not policy.allow_upload:
-        return None
-    if policy.route not in {"auto", "default", "free-online", "configured-online"}:
+    model_ref = policy.model_ref()
+    if model_ref is None and not policy.auto():
         return None
     models = openrouter_models
-    if policy.model in {None, "auto"} and models is None:
+    if model_ref is None and models is None:
         models = load_openrouter_models(cache_root, offline=offline)
     model_route = resolve_model_ref(
-        policy.model,
+        model_ref,
         capability=capability,
         env=env,
         openrouter_models=models,
     )
     if not model_route.available or model_route.provider != "openrouter":
-        return None
-    if policy.route == "free-online" and model_route.cost != "free":
         return None
     if model_route.upload != "required":
         return None

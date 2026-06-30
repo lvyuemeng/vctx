@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from vctx.config import CapabilityEnabled, CapabilityPolicy
+from vctx.config import CapabilityPolicy
 from vctx.models.manifest import CapabilityName, SelectedRoute, TransformEvidence
 from vctx.transforms.ai_routes import AiRoute
 
@@ -31,6 +31,7 @@ class SourceState(BaseModel):
 class TransformEnvironment(BaseModel):
     installed_asr: bool = False
     network_available: bool = True
+    upload_allowed: bool = True
     offline: bool = False
     configured_asr: bool = False
     configured_asr_provider_id: str | None = None
@@ -80,11 +81,15 @@ def _plan(
 
 
 def _disabled(policy: CapabilityPolicy) -> bool:
-    return policy.enabled == CapabilityEnabled.FALSE or policy.route == "disabled"
+    return policy.disabled()
 
 
-def _online_allowed(policy: CapabilityPolicy, environment: TransformEnvironment) -> bool:
-    return policy.allow_network and environment.network_available and not environment.offline
+def _online_allowed(environment: TransformEnvironment) -> bool:
+    return (
+        environment.network_available
+        and environment.upload_allowed
+        and not environment.offline
+    )
 
 
 def plan_asr(
@@ -109,7 +114,7 @@ def plan_asr(
             requirements=["media asset"],
         )
     if environment.installed_asr:
-        model_id = policy.model or environment.configured_asr_model_id or "base"
+        model_id = policy.model_ref() or environment.configured_asr_model_id or "base"
         return _plan(
             capability="asr",
             selected="local",
@@ -123,7 +128,7 @@ def plan_asr(
                 reason="default local ASR route available",
             ),
         )
-    if _online_allowed(policy, environment) and environment.free_online_asr:
+    if _online_allowed(environment) and environment.free_online_asr:
         return _plan(
             capability="asr",
             selected="free-online",
@@ -139,14 +144,9 @@ def plan_asr(
                 reason="free zero-config online ASR route available",
             ),
         )
-    if _online_allowed(policy, environment) and policy.allow_upload and environment.configured_asr:
-        provider_id = (
-            environment.configured_asr_provider_id
-            or policy.instance
-            or policy.preferred_provider
-            or "default-asr"
-        )
-        model_id = policy.model or environment.configured_asr_model_id
+    if _online_allowed(environment) and environment.configured_asr:
+        provider_id = environment.configured_asr_provider_id or "default-asr"
+        model_id = policy.model_ref() or environment.configured_asr_model_id
         reason = "configured online ASR route available"
         return _plan(
             capability="asr",

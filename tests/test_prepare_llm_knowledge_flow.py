@@ -132,9 +132,8 @@ def test_prepare_explicit_llm_knowledge_flow_supplement_merges_into_artifact(
                 'env_files = [".env"]',
                 "",
                 "[transforms.knowledge_flow]",
-                'enabled = "true"',
-                'route = "configured-online"',
-                'model = "openrouter:test/text-model"',
+                'enabled = true',
+                'use = "openrouter:test/text-model"',
             ]
         ),
         encoding="utf-8",

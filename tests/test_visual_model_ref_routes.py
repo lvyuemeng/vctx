@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import pytest
 
-from vctx.config import CapabilityEnabled, CapabilityPolicy, VisionInstanceConfig
+from vctx.config import AutoUse, CapabilityPolicy, InstanceUse, ModelRefUse, VisionInstanceConfig
 from vctx.models import SourceRef
 from vctx.models.media import LocalMediaAsset, MediaAsset
 from vctx.models.visual import FrameAsset
@@ -29,12 +29,7 @@ from vctx.transforms.visual_vlm import VlmOutcome
 
 def test_openrouter_prefix_model_discovers_describe_operation_without_provider_block() -> None:
     operations = discover_visual_actions(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            model="openrouter:nex-agi/nex-n2-pro:free",
-            allow_network=True,
-            allow_upload=True,
-        ),
+        CapabilityPolicy(enabled=True, use=ModelRefUse(ref="openrouter:nex-agi/nex-n2-pro:free")),
         env={"OPENROUTER_API_KEY": "present"},
     )
 
@@ -53,13 +48,7 @@ def test_openrouter_prefix_model_discovers_describe_operation_without_provider_b
 
 def test_configured_online_allows_explicit_paid_openrouter_model_without_extra_gate() -> None:
     operations = discover_visual_actions(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            route="configured-online",
-            model="openrouter:anthropic/claude-sonnet-4",
-            allow_network=True,
-            allow_upload=True,
-        ),
+        CapabilityPolicy(enabled=True, use=ModelRefUse(ref="openrouter:anthropic/claude-sonnet-4")),
         env={"OPENROUTER_API_KEY": "present"},
     )
 
@@ -71,29 +60,21 @@ def test_configured_online_allows_explicit_paid_openrouter_model_without_extra_g
     assert describe.ai_route.cost == "paid"
 
 
-def test_free_online_rejects_explicit_paid_openrouter_model() -> None:
+def test_paid_openrouter_model_ref_discovers_configured_route() -> None:
     operations = discover_visual_actions(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            route="free-online",
-            model="openrouter:anthropic/claude-sonnet-4",
-            allow_network=True,
-            allow_upload=True,
-        ),
+        CapabilityPolicy(enabled=True, use=ModelRefUse(ref="openrouter:anthropic/claude-sonnet-4")),
         env={"OPENROUTER_API_KEY": "present"},
     )
 
-    assert all(operation.name != "describe" for operation in operations)
+    describe = next(operation for operation in operations if operation.name == "describe")
+    assert describe.route == "configured-online"
+    assert describe.ai_route is not None
+    assert describe.ai_route.cost == "paid"
 
 
 def test_auto_model_discovers_free_openrouter_vlm_from_registry_metadata() -> None:
     operations = discover_visual_actions(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            model="auto",
-            allow_network=True,
-            allow_upload=True,
-        ),
+        CapabilityPolicy(enabled=True, use=AutoUse()),
         env={"OPENROUTER_API_KEY": "present"},
         openrouter_models=[
             OpenRouterModel(
@@ -122,16 +103,9 @@ def test_auto_model_discovers_free_openrouter_vlm_from_registry_metadata() -> No
     assert describe.ai_route.model == "nex-agi/nex-n2-pro:free"
 
 
-def test_vision_instance_still_takes_precedence_over_prefix_auto() -> None:
+def test_vision_instance_use_selects_named_provider() -> None:
     operations = discover_visual_actions(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            route="configured-online",
-            preferred_provider="test-vlm",
-            model="auto",
-            allow_network=True,
-            allow_upload=True,
-        ),
+        CapabilityPolicy(enabled=True, use=InstanceUse(name="test-vlm")),
         vision_instance_configs={
             "test-vlm": VisionInstanceConfig(
                 type="openai-compatible-vision",
@@ -157,12 +131,7 @@ def test_vision_instance_still_takes_precedence_over_prefix_auto() -> None:
 
 def test_injected_ai_route_discovers_visual_describe_without_env_or_registry() -> None:
     operations = discover_visual_actions(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            model="auto",
-            allow_network=True,
-            allow_upload=True,
-        ),
+        CapabilityPolicy(enabled=True, use=AutoUse()),
         ai_routes=[
             _openrouter_vision_route(reason="pre-resolved by app boundary")
         ],

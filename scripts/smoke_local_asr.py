@@ -22,7 +22,7 @@ def main() -> int:
     config_path.write_text(
         """
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"

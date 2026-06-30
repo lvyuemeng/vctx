@@ -65,7 +65,7 @@ class FasterWhisperAsrAdapter:
         except Exception as exc:
             raise AsrExecutionError(
                 "faster-whisper ASR failed. If offline, pre-populate the model cache "
-                "or point the instance model to a local model path. Original error: "
+                "or set instance model to path:<local-path>. Original error: "
                 f"{exc}"
             ) from exc
         return TranscriptPayload(
@@ -90,13 +90,14 @@ class FasterWhisperAsrAdapter:
             "device": "auto",
             "compute_type": "default",
         }
-        if _looks_like_local_path(model_id):
+        model_path = Path(model_id)
+        if model_path.is_absolute() or model_path.exists():
             kwargs["local_files_only"] = True
             return kwargs
         if self.instance.cache == "disabled":
             raise AsrExecutionError(
-                "cache = disabled requires a local model path for local-faster-whisper; "
-                "set model to an explicit local path or omit cache for managed persistent cache"
+                "cache = disabled requires path:<local-path> for local-faster-whisper; "
+                "omit cache for managed persistent cache"
             )
         model_cache = self.cache_root / "models" / "faster-whisper"
         try:
@@ -104,7 +105,7 @@ class FasterWhisperAsrAdapter:
         except OSError as exc:
             raise AsrExecutionError(
                 "ASR model cache is not writable. Free disk space, choose another "
-                "runtime.cache_dir, or set model to an explicit local model path. "
+                "runtime.cache_dir, or set model to path:<local-path>. "
                 f"Cache path: {model_cache}. Original error: {exc}"
             ) from exc
         kwargs["download_root"] = str(model_cache)
@@ -263,15 +264,6 @@ def _append_form_field(body: bytearray, boundary: str, name: str, value: str) ->
     body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
     body.extend(value.encode())
     body.extend(b"\r\n")
-
-
-def _looks_like_local_path(value: str) -> bool:
-    path = Path(value)
-    return (
-        path.exists()
-        or path.is_absolute()
-        or any(separator in value for separator in ("/", "\\"))
-    )
 
 
 def _segments_to_vtt(segments: Iterable[WhisperSegment]) -> str:

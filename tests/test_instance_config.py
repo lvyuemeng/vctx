@@ -22,11 +22,11 @@ def test_instance_config_separates_local_and_online_asr(tmp_path: Path) -> None:
 env_files = [".env"]
 
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"
-model = "models/faster-whisper-tiny"
+model = "path:models/faster-whisper-tiny"
 cache = "persistent"
 
 [instances.asr.openai-whisper]
@@ -43,7 +43,7 @@ model = "whisper-1"
     )
 
     assert resolved.runtime.env_files == [tmp_path / ".env"]
-    assert resolved.transforms.asr.instance == "local-default"
+    assert resolved.transforms.asr.instance_name() == "local-default"
     assert resolved.instances.asr["local-default"].type == "local-faster-whisper"
     assert resolved.instances.asr["local-default"].model == str(
         tmp_path / "models" / "faster-whisper-tiny"
@@ -53,10 +53,28 @@ model = "whisper-1"
     assert resolved.instances.asr["openai-whisper"].api_key_env == "OPENAI_API_KEY"
 
 
+def test_bare_local_asr_model_name_is_not_guessed_as_path(tmp_path: Path) -> None:
+    config_path = tmp_path / "vctx.toml"
+    config_path.write_text(
+        """
+[instances.asr.local-default]
+type = "local-faster-whisper"
+model = "my_model_v1"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    resolved = resolve_config(
+        PrepareRequest(input="lecture.mp4", out_dir=tmp_path / "out", config_path=config_path)
+    )
+
+    assert resolved.instances.asr["local-default"].model == "my_model_v1"
+
+
 def test_explicit_online_asr_instance_is_paid_and_upload_evidence(tmp_path: Path) -> None:
     request = PrepareRequest(input="lecture.mp4", out_dir=tmp_path / "out")
     resolved = resolve_config(request)
-    policy = resolved.transforms.asr.model_copy(update={"instance": "openai-whisper"})
+    policy = resolved.transforms.asr.model_copy(update={"use": "instance:openai-whisper"})
     environment = TransformEnvironment(
         configured_asr=True,
         configured_asr_provider_id="openai-whisper",

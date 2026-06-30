@@ -9,7 +9,6 @@ from typer.testing import CliRunner
 
 from vctx.cli import app
 from vctx.config import (
-    CapabilityEnabled,
     PrepareRequest,
     WorkflowProfile,
     resolve_config,
@@ -61,9 +60,9 @@ def test_visual_auto_template_uses_gitignored_env_file_and_no_ocr_language_confi
     assert resolved.runtime.env_files == [_TEMPLATE_PATH.parent / ".env"]
     assert resolved.source.yt_dlp.media_profile == "balanced"
     assert resolved.source.yt_dlp.subtitle_languages == ["en", "ja", "zh-Hans", "zh-Hant"]
-    assert resolved.transforms.visual_context.enabled == CapabilityEnabled.TRUE
-    assert resolved.transforms.visual_context.model == "auto"
-    assert resolved.transforms.visual_context.instance is None
+    assert resolved.transforms.visual_context.enabled is True
+    assert resolved.transforms.visual_context.auto()
+    assert resolved.transforms.visual_context.instance_name() is None
     assert resolved.instances.asr == {}
 
 

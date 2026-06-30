@@ -16,7 +16,6 @@ from vctx.app.result import PrepareResult, PrepareSummary
 from vctx.chunking import ChunkOptions, ChunkSet, chunk_transcript
 from vctx.config import (
     AsrInstanceConfig,
-    CapabilityEnabled,
     PrepareRequest,
     ResolvedConfig,
     WorkflowProfile,
@@ -352,7 +351,7 @@ def _asr_source(run: Run, transcript_error: NoTranscriptError) -> RoutePlan | Pr
 
 
 def _asr_ready(run: Run, asr_plan: RoutePlan) -> AsrReady | PrepareResult:
-    instance_name = run.resolved.transforms.asr.instance
+    instance_name = run.resolved.transforms.asr.instance_name()
     instance = run.resolved.instances.asr.get(instance_name) if instance_name else None
     if instance is None:
         run.manifest.add_step("transform.asr", "warning", "ASR instance is not configured")
@@ -502,8 +501,10 @@ def _visual_plan(
             run.resolved.transforms.visual_context,
             vision_instance_configs=run.resolved.instances.vision,
             ai_routes=run.visual_ai_routes(),
+            offline=run.resolved.runtime.offline,
         ),
     )
+
     if plan.kind == "skipped":
         run.manifest.add_step(
             "transform.visual_plan",
@@ -519,7 +520,6 @@ def _visual_plan(
         plan.assessment.rationale,
     )
     return plan
-
 
 def _source_access(run: Run, prepared: Prepared) -> SourceAccess:
     media_type = run.media.media_type if run.media is not None else None
@@ -674,7 +674,7 @@ def _partial(run: Run) -> PrepareResult:
 
 
 def _asr_environment(resolved: ResolvedConfig) -> TransformEnvironment:
-    instance_name = resolved.transforms.asr.instance
+    instance_name = resolved.transforms.asr.instance_name()
     instance = resolved.instances.asr.get(instance_name) if instance_name else None
     if instance is None:
         return TransformEnvironment(offline=resolved.runtime.offline)
@@ -697,7 +697,7 @@ def _asr_environment(resolved: ResolvedConfig) -> TransformEnvironment:
 
 
 def _visual_enabled(resolved: ResolvedConfig) -> bool:
-    return resolved.transforms.visual_context.enabled == CapabilityEnabled.TRUE
+    return resolved.transforms.visual_context.enabled
 
 
 def _transcript_detail(payload: TranscriptPayload) -> str:

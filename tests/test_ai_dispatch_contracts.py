@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import get_args
 
-from vctx.config import CapabilityEnabled, CapabilityPolicy
+from vctx.config import AutoUse, CapabilityPolicy, ModelRefUse
 from vctx.transforms.ai_routes import (
     AiRoute,
     AiTaskKind,
@@ -137,18 +137,12 @@ def test_resolve_openrouter_ai_route_returns_free_vision_route_for_auto_model(
     tmp_path,
 ) -> None:
     route = resolve_openrouter_ai_route(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            route="free-online",
-            model="auto",
-            allow_network=True,
-            allow_upload=True,
-        ),
+        CapabilityPolicy(enabled=True, use=AutoUse()),
         task="vision_description",
         capability=ModelCapability.VISION_DESCRIPTION,
         cache_root=tmp_path,
         env={"OPENROUTER_API_KEY": "present"},
-        offline=True,
+        offline=False,
         openrouter_models=[_openrouter_model("nex-agi/nex-n2-pro:free", vision=True)],
     )
 
@@ -159,43 +153,33 @@ def test_resolve_openrouter_ai_route_returns_free_vision_route_for_auto_model(
     assert route.cost == "free"
 
 
-def test_resolve_openrouter_ai_route_rejects_paid_model_for_free_online(
+def test_resolve_openrouter_ai_route_returns_paid_model_ref(
     tmp_path,
 ) -> None:
     route = resolve_openrouter_ai_route(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            route="free-online",
-            model="openrouter:anthropic/claude-sonnet-4",
-            allow_network=True,
-            allow_upload=True,
-        ),
+        CapabilityPolicy(enabled=True, use=ModelRefUse(ref="openrouter:anthropic/claude-sonnet-4")),
         task="vision_description",
         capability=ModelCapability.VISION_DESCRIPTION,
         cache_root=tmp_path,
         env={"OPENROUTER_API_KEY": "present"},
-        offline=True,
+        offline=False,
     )
 
-    assert route is None
+    assert route is not None
+    assert route.selected == "configured-online"
+    assert route.cost == "paid"
 
 
 def test_resolve_openrouter_ai_route_returns_configured_text_route_for_paid_model(
     tmp_path,
 ) -> None:
     route = resolve_openrouter_ai_route(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            route="configured-online",
-            model="openrouter:anthropic/claude-sonnet-4",
-            allow_network=True,
-            allow_upload=True,
-        ),
+        CapabilityPolicy(enabled=True, use=ModelRefUse(ref="openrouter:anthropic/claude-sonnet-4")),
         task="knowledge_flow_extraction",
         capability=ModelCapability.ESSENTIAL_CASES,
         cache_root=tmp_path,
         env={"OPENROUTER_API_KEY": "present"},
-        offline=True,
+        offline=False,
     )
 
     assert route is not None

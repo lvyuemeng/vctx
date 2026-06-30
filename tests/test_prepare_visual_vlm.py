@@ -32,11 +32,10 @@ def test_prepare_visual_workflow_runs_configured_vlm_description(
 env_files = ["{env_file.name}"]
 
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [transforms.visual_context]
-route = "configured-online"
-preferred_provider = "test-vlm"
+use = "instance:test-vlm"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"
@@ -163,10 +162,10 @@ def test_prepare_visual_workflow_runs_openrouter_prefix_vlm_description(
     config.write_text(
         """
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [transforms.visual_context]
-model = "openrouter:nex-agi/nex-n2-pro:free"
+use = "openrouter:nex-agi/nex-n2-pro:free"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"
@@ -303,10 +302,10 @@ cache_dir = "{cache_dir.as_posix()}"
 env_files = ["{env_file.name}"]
 
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [transforms.visual_context]
-model = "auto"
+use = "auto"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"
@@ -407,10 +406,10 @@ def test_prepare_visual_workflow_keeps_capture_when_vlm_description_fails(
     config.write_text(
         """
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [transforms.visual_context]
-model = "openrouter:qwen/qwen3-vl-8b-instruct"
+use = "openrouter:qwen/qwen3-vl-8b-instruct"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"

@@ -54,9 +54,9 @@ Configuration answers two questions:
    - `source.*`
    - `output.*`
 2. If a workflow branch needs a model/tool, which implementation is selected?
-   - `transforms.asr.instance` -> `[instances.asr.<name>]`, or omit for `auto`
-   - `transforms.visual_context.instance` -> `[instances.vision.<name>]`, or use `model = "auto"` / `openrouter:<model-id>`
-   - `transforms.knowledge_flow.model` for the current text-model supplement path
+   - `transforms.asr.use = "instance:<name>"` -> `[instances.asr.<name>]`, or use `auto`
+   - `transforms.visual_context.use` -> `auto`, `instance:<name>`, or `openrouter:<model-id>`
+   - `transforms.knowledge_flow.use` for the current text-model supplement path
 
 Current config precedence is high to low:
 
@@ -101,7 +101,7 @@ Named ASR instance:
 
 ```toml
 [transforms.asr]
-instance = "local-default"  # arbitrary name
+use = "instance:local-default"  # arbitrary name
 
 [instances.asr.local-default]
 type = "local-faster-whisper"
@@ -113,7 +113,7 @@ Online ASR instance:
 
 ```toml
 [transforms.asr]
-instance = "openai-whisper"
+use = "instance:openai-whisper"
 
 [instances.asr.openai-whisper]
 type = "openai-compatible-audio"
@@ -122,13 +122,13 @@ api_key_env = "OPENAI_API_KEY"
 model = "whisper-1"
 ```
 
-`local-default`, `local-model`, and `openai-whisper` are example names, not magic built-ins. The user can name an instance anything and select it with `transforms.asr.instance`.
+`local-default`, `local-model`, and `openai-whisper` are example names, not magic built-ins. The user can name an instance anything and select it with `transforms.asr.use = "instance:<name>"`.
 
 Current ASR instance types:
 
 | Type | Behavior |
 | --- | --- |
-| `local-faster-whisper` | Runs local `faster_whisper`. `model_policy = "auto"` currently executes faster-whisper model id `base`. Managed model ids use `runtime.cache_dir/models/faster-whisper`; explicit local paths do not use managed download/cache. |
+| `local-faster-whisper` | Runs local `faster_whisper`. `model_policy = "auto"` currently executes faster-whisper model id `base`. Managed model ids use `runtime.cache_dir/models/faster-whisper`; `path:<local-path>` uses local files only. |
 | `openai-compatible-audio` | Sends multipart audio/media to `base_url` with `model` and credential from `api_key_env`; manifest records upload/cost evidence automatically. |
 
 ### Visual frames, OCR, and VLM descriptions
@@ -143,15 +143,15 @@ Automatic/pinned OpenRouter route:
 
 ```toml
 [transforms.visual_context]
-model = "auto"                  # select a free capable OpenRouter VLM when possible
-# model = "openrouter:<model>"   # pin a specific OpenRouter VLM
+use = "auto"                    # select a free capable OpenRouter VLM when possible
+# use = "openrouter:<model>"     # pin a specific OpenRouter VLM
 ```
 
 Named vision instance:
 
 ```toml
 [transforms.visual_context]
-instance = "my-vlm"
+use = "instance:my-vlm"
 
 [instances.vision.my-vlm]
 type = "openai-compatible-vision"
@@ -160,7 +160,7 @@ api_key_env = "MY_VLM_API_KEY"
 model = "my-vision-model"
 ```
 
-`model = "auto"` may fetch/cache OpenRouter registry metadata when network/upload are allowed and `OPENROUTER_API_KEY` is present. It selects the highest-ranked free capable model from vctx's curated capability ranking, then context length and stable id order. Registry metadata filters capability/cost; it does not prove objective model quality.
+`use = "auto"` may fetch/cache OpenRouter registry metadata when network/upload are allowed and `OPENROUTER_API_KEY` is present. It selects the highest-ranked free capable model from vctx's curated capability ranking, then context length and stable id order. Registry metadata filters capability/cost; it does not prove objective model quality.
 
 ### Knowledge-flow and text-model supplements
 
@@ -339,7 +339,7 @@ chunk_max_chars = 6000
 chunk_max_seconds = 900
 
 [transforms.asr]
-instance = "local-default"       # arbitrary example name selected below
+use = "instance:local-default"   # arbitrary example name selected below
 
 [instances.asr.local-default]
 type = "local-faster-whisper"
@@ -348,7 +348,7 @@ cache = "persistent"             # managed weights under runtime.cache_dir/model
 
 [instances.asr.local-model]
 type = "local-faster-whisper"
-model = "D:/models/faster-whisper-tiny"  # explicit path => no managed cache/download
+model = "path:D:/models/faster-whisper-tiny"  # explicit path => no managed cache/download
 
 [instances.asr.openai-whisper]
 type = "openai-compatible-audio"
@@ -357,9 +357,9 @@ api_key_env = "OPENAI_API_KEY"   # value can come from shell env or runtime.env_
 model = "whisper-1"
 
 [transforms.visual_context]
-model = "auto"  # cached/fetched OpenRouter registry selects a free capable VLM when OPENROUTER_API_KEY exists
+use = "auto"  # cached/fetched OpenRouter registry selects a free capable VLM when OPENROUTER_API_KEY exists
 # or choose a named vision instance:
-# instance = "my-vlm"
+# use = "instance:my-vlm"
 
 [instances.vision.my-vlm]
 type = "openai-compatible-vision"
@@ -368,18 +368,19 @@ api_key_env = "MY_VLM_API_KEY"
 model = "my-vision-model"
 
 [transforms.knowledge_flow]
-model = "auto"  # current text-model supplement path; deterministic extraction works without this
+use = "auto"  # current text-model supplement path; deterministic extraction works without this
 ```
 
-Policy fields such as `route`, `allow_upload`, and `preferred_provider` are advanced routing controls. Normal public config should prefer `auto`, a decisive model reference, or a named `[instances.asr.*]` / `[instances.vision.*]` entry. Local vs online is inferred from the model or instance shape where supported:
+Transform selector field `use` is the public model/tool selection surface. Runtime network/upload constraints come from execution context, not user config. Normal public config should choose exactly one selector value; separate `route`/`instance`/`model` transform fields are not part of the current config surface.
 
 ```text
-openrouter:<model-id>  -> remote OpenRouter route, OPENROUTER_API_KEY credential name, upload as required by capability
-local:<path-or-id>     -> local route, no upload, explicit paths are config-relative and disable managed download/cache
-hf:<repo-id>           -> managed local cache route when a compatible runtime exists
-alias:<name>           -> reserved model-ref shape; named runtime instances use [instances.<capability>.<name>]
-none                  -> disable that model-mediated transform
-auto                  -> choose the highest-ranked free compatible OpenRouter route for the capability when credentials/network/upload allow it
+auto                  -> let vctx choose the implemented default for that transform
+none                  -> disable that transform branch
+instance:<name>       -> select [instances.asr.<name>] or [instances.vision.<name>]
+openrouter:<model-id> -> remote OpenRouter model route, using OPENROUTER_API_KEY
+path:<local-path>     -> local model/resource path; config-relative where supported
+local:<path-or-id>    -> local model id/path for local-capable transforms
+hf:<repo-id>          -> managed local cache route when a compatible runtime exists
 ```
 
 Field semantics:
@@ -394,14 +395,14 @@ Field semantics:
 | `source.yt_dlp.playlist` | Optional playlist/multipart selector as `default` or `items:<spec>`. Omit unless the source URL resolves to the wrong playlist item. |
 | `source.yt_dlp.media_profile` | Visual media quality/speed preset: `fast`, `balanced`, or `high`. ASR always uses audio-only demand automatically. |
 | `output.formats` | Default render/artifact formats for `prepare`; the prepare CLI does not expose a `--format` flag. |
-| `transforms.asr.instance` | Optional ASR fallback instance selector from `[instances.asr.<name>]`; omit for auto. Runs only if deterministic transcript acquisition fails and media is available. |
-| `transforms.visual_context.model` | Visual-description model reference. Current `auto`/`openrouter:<model-id>` paths use OpenRouter when credentials and policy allow. |
-| `transforms.visual_context.instance` | Optional vision instance selector from `[instances.vision.<name>]`; use when you want a named OpenAI-compatible VLM endpoint. |
-| `transforms.knowledge_flow.model` | Current text-model supplement selector. Deterministic knowledge-flow extraction does not need a model. |
+| `transforms.asr.use` | ASR fallback selector: `auto`, `none`, `instance:<name>`, `local:<model-or-path>`, or `path:<local-path>`. Runs only if deterministic transcript acquisition fails and media is available. |
+| `transforms.visual_context.use` | Visual-description selector: `auto`, `none`, `instance:<name>`, or `openrouter:<model-id>`. |
+| `instances.vision.<name>` | Named OpenAI-compatible VLM endpoint selected by `transforms.visual_context.use = "instance:<name>"`. |
+| `transforms.knowledge_flow.use` | Current text-model supplement selector. Deterministic knowledge-flow extraction does not need a model. |
 | `instances.asr.<name>.type` | ASR implementation type: `local-faster-whisper` or `openai-compatible-audio`. The `<name>` is arbitrary. |
 | `instances.asr.<name>.model_policy` | Local faster-whisper managed model policy. Current `auto` executes model id `base`. |
-| `instances.asr.<name>.model` | Either a model id such as `tiny`/`base` for managed persistent cache, or an explicit local model path. A local path uses local files only. |
-| `instances.asr.<name>.cache` | `persistent` stores managed faster-whisper weights under `runtime.cache_dir/models/faster-whisper`; `disabled` requires an explicit local model path. |
+| `instances.asr.<name>.model` | Either a model id such as `tiny`/`base` for managed persistent cache, or `path:<local-path>` for local files only. Bare path-like strings are treated as model ids, not guessed as paths. |
+| `instances.asr.<name>.cache` | `persistent` stores managed faster-whisper weights under `runtime.cache_dir/models/faster-whisper`; `disabled` requires `path:<local-path>`. |
 | `instances.asr.<name>.api_key_env` | Environment variable containing an ASR credential. The config stores only the variable name. |
 | `instances.vision.<name>.type` | Vision implementation type. Current implemented value: `openai-compatible-vision`, using chat-completions style image messages. |
 | `instances.vision.<name>.base_url` | VLM chat-completions endpoint. |
@@ -414,9 +415,9 @@ Configured online ASR/VLM routes are selected only when a named online instance 
 
 Model transformations are capability-level defaults, not provider menus. The normal API should avoid asking users to choose `local` vs `online` vs provider names.
 
-Default routing semantics:
+Manifest route evidence semantics:
 
-| Route | Meaning |
+| Manifest route | Meaning |
 | --- | --- |
 | deterministic | Use source data such as local transcript files, official subtitles, automatic subtitles, or deterministic extraction. |
 | local | Use local installed tools/packages such as faster-whisper or RapidOCR. |
@@ -452,7 +453,7 @@ prepare INPUT
   -> manifest records every route and provider actually used
 ```
 
-The CLI should not expose raw provider menus for normal usage. Prefix-style model/resource references such as `openrouter:<model-id>`, `local:<path>`, `hf:<repo-id>`, `alias:<name>`, `auto`, and `none` are decisive field shapes where implemented: they infer route behavior instead of requiring separate provider/base-url/api-key/cost/upload fields. If two implementations can serve the same capability, `vctx` should choose the best project default and record the actual choice in `manifest.json`.
+The CLI should not expose raw provider menus for normal usage. Prefix-style `use` values such as `openrouter:<model-id>`, `local:<path>`, `hf:<repo-id>`, `instance:<name>`, `auto`, and `none` are decisive selector shapes where implemented: they infer route behavior instead of requiring separate transform route/model/instance fields. If two implementations can serve the same capability, `vctx` should choose the best project default and record the actual choice in `manifest.json`.
 
 ### `vctx metadata`
 

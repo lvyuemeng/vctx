@@ -27,24 +27,24 @@ def prepare_command(
     overwrite: Annotated[
         bool, typer.Option("--overwrite", help="Allow writing into non-empty output directory.")
     ] = False,
-    chunk_max_chars: Annotated[int, typer.Option("--chunk-max-chars")] = 6000,
+    chunk_max_chars: Annotated[int | None, typer.Option("--chunk-max-chars")] = None,
     chunk_max_seconds: Annotated[int | None, typer.Option("--chunk-max-seconds")] = None,
     cache_dir: Annotated[Path | None, typer.Option("--cache-dir")] = None,
-    keep_temp: Annotated[bool, typer.Option("--keep-temp")] = False,
+    keep_temp: Annotated[bool | None, typer.Option("--keep-temp")] = None,
     workflow: Annotated[
-        WorkflowProfile,
+        WorkflowProfile | None,
         typer.Option(
             "--workflow",
             help="Preparation workflow instance: default, transcript, visual, full, or metadata.",
         ),
-    ] = WorkflowProfile.DEFAULT,
+    ] = None,
     offline: Annotated[
-        bool,
+        bool | None,
         typer.Option(
             "--offline",
             help="Use the offline workflow policy; network routes unavailable.",
         ),
-    ] = False,
+    ] = None,
     config: Annotated[
         Path | None,
         typer.Option("--config", help="Optional TOML config file for workflow defaults."),

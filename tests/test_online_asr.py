@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from vctx.app.credentials import CredentialError, resolve_env_credential
 from vctx.cli import app
-from vctx.config import AsrInstanceConfig, CapabilityEnabled, CapabilityPolicy
+from vctx.config import AsrInstanceConfig, CapabilityPolicy, InstanceUse
 from vctx.models import SourceRef
 from vctx.models.media import LocalMediaAsset, MediaAsset
 from vctx.net import NetRequest, NetResponse
@@ -169,7 +169,7 @@ def test_prepare_local_media_can_use_configured_online_asr(
 env_files = ["{env_file.as_posix()}"]
 
 [transforms.asr]
-instance = "online-test"
+use = "instance:online-test"
 
 [instances.asr.online-test]
 type = "openai-compatible-audio"
@@ -236,11 +236,7 @@ def test_run_asr_uses_ai_route_provider_identity_when_legacy_field_is_absent(
         model="whisper-test",
     )
     route_plan = plan_asr(
-        CapabilityPolicy(
-            enabled=CapabilityEnabled.TRUE,
-            allow_upload=True,
-            model="whisper-test",
-        ),
+        CapabilityPolicy(enabled=True, use=InstanceUse(name="online-test")),
         TransformEnvironment(
             configured_asr=True,
             configured_asr_provider_id="online-test",

@@ -24,7 +24,7 @@ def test_prepare_local_media_runs_asr_and_writes_full_context_pack(
     config.write_text(
         """
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"

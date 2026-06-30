@@ -94,7 +94,7 @@ def test_prepare_url_without_subtitles_downloads_media_and_runs_asr(
     config_path.write_text(
         """
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"

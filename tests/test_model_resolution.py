@@ -50,6 +50,35 @@ def test_local_prefix_inferrs_no_upload_and_resolves_config_relative_path(
     assert route.available is True
 
 
+def test_path_prefix_resolves_config_relative_local_model(tmp_path: Path) -> None:
+    route = resolve_model_ref(
+        "path:models/qwen-vl.gguf",
+        capability=ModelCapability.VISION_DESCRIPTION,
+        env={},
+        base_dir=tmp_path,
+    )
+
+    assert route.ref == ModelRef(
+        prefix="local", value=str(tmp_path / "models" / "qwen-vl.gguf")
+    )
+    assert route.provider == "local"
+    assert route.model == str(tmp_path / "models" / "qwen-vl.gguf")
+    assert route.upload == "none"
+
+
+def test_bare_path_like_model_ref_is_alias_not_local_path(tmp_path: Path) -> None:
+    route = resolve_model_ref(
+        "models/qwen-vl.gguf",
+        capability=ModelCapability.VISION_DESCRIPTION,
+        env={},
+        base_dir=tmp_path,
+    )
+
+    assert route.ref == ModelRef(prefix="alias", value="models/qwen-vl.gguf")
+    assert route.provider == "alias"
+    assert route.available is False
+
+
 def test_auto_selects_free_openrouter_vlm_from_registry_when_key_exists() -> None:
     free_vlm = OpenRouterModel(
         id="nex-agi/nex-n2-pro:free",

@@ -28,7 +28,7 @@ def test_prepare_visual_workflow_writes_capture_records_and_frame_refs(
     config.write_text(
         """
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"

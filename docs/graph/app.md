@@ -85,8 +85,7 @@ Only one config file is selected.
 ```text
 missing/null -> default
 false        -> disabled
-auto/default -> inspect source + installed tools + policy
-explicit     -> use or fail clearly
+auto         -> inspect source + installed tools + policy
 ```
 
 ## Manifest rule

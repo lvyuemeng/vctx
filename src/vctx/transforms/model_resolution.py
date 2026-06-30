@@ -75,14 +75,12 @@ def parse_model_ref(value: str | None) -> ModelRef:
     if separator:
         if prefix == "openrouter":
             return ModelRef(prefix="openrouter", value=rest)
-        if prefix == "local":
+        if prefix in {"local", "path"}:
             return ModelRef(prefix="local", value=rest)
         if prefix == "hf":
             return ModelRef(prefix="hf", value=rest)
         if prefix == "alias":
             return ModelRef(prefix="alias", value=rest)
-    if _looks_like_path_value(value):
-        return ModelRef(prefix="local", value=value)
     return ModelRef(prefix="alias", value=value)
 
 
@@ -303,13 +301,6 @@ def _preference_rank(model: OpenRouterModel, capability: ModelCapability) -> int
 
 def _openrouter_cost_from_id(model: str) -> ModelCost:
     return "free" if model.endswith(":free") else "paid"
-
-
-def _looks_like_path_value(value: str) -> bool:
-    path = Path(value)
-    return path.is_absolute() or value.startswith(".") or any(
-        separator in value for separator in ("/", "\\")
-    )
 
 
 def load_openrouter_models(

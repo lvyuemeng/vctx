@@ -86,12 +86,11 @@ def test_prepare_visual_uses_llm_essential_cases_as_sampling_anchors(
 env_files = [".env"]
 
 [transforms.asr]
-instance = "local-default"
+use = "instance:local-default"
 
 [transforms.knowledge_flow]
-enabled = "true"
-route = "configured-online"
-model = "openrouter:test/text-model"
+enabled = true
+use = "openrouter:test/text-model"
 
 [instances.asr.local-default]
 type = "local-faster-whisper"
